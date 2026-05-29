@@ -9,6 +9,9 @@ from routes.request_controller import request_router
 from routes.plate_controller import router as plate_router
 from routes.admin_controller import router as user_router
 from routes.entry_record_controller import router as entry_record_router
+from routes.analytics_controller import router as analytics_router
+from routes.webhook_controller import router as webhook_router
+
 from dotenv import load_dotenv
 from mqtt.client import mqttClient
 import os
@@ -34,17 +37,16 @@ origins =[
     "http://localhost:8080",
     "http://localhost:5173",
     "http://10.41.11.21:9696"
-    # "http://192.168.0.101:5173" 
+    # "http://192.168.0.101:5173"
 ]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins, 
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 
 app.include_router(login_router)
 app.include_router(user_router)
@@ -53,3 +55,5 @@ app.include_router(register_router)
 app.include_router(request_router)
 app.include_router(plate_router)
 app.include_router(entry_record_router)
+app.include_router(analytics_router, prefix="/api/analytics", tags=["Analytics Dashboard"])
+app.include_router(webhook_router, prefix="/webhook", tags=["LINE Chatbot"])
