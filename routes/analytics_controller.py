@@ -5,9 +5,17 @@ from services.analytics_service import AnalyticsService
 from schemas.analytics import HeatmapResponse, TrendResponse
 from datetime import datetime
 from typing import Optional
-from db.models import ParkingSnapshot2  # <-- นำเข้า Model สำหรับกล้อง 2
+from db.models import ParkingSnapshot, ParkingSnapshot2
 
 router = APIRouter()
+
+from schemas.analytics import (
+    HeatmapResponse,
+    TrendResponse,
+    SystemHealthResponse,
+    DeviceHeartbeatPayload,
+    CameraEventPayload
+)
 
 @router.get("/heatmap", response_model=HeatmapResponse)
 def get_spatial_heatmap(
@@ -26,53 +34,89 @@ def get_occupancy_trends(
     end_date: datetime = Query(..., description="Ended Time"),
     db: Session = Depends(get_db)
 ):
-    """
-    Pulling statics data (Peak Hour)
-    """
     service = AnalyticsService(db)
     return service.get_occupancy_trends(lot_id, start_date, end_date)
 
-
 @router.get("/current")
 def get_current_status(
-        lot_id: str = Query("CAMT_02", description="Parking Lot ID"),
-        db: Session = Depends(get_db)
+    lot_id: str = Query("CAMT_02", description="Parking Lot ID"),
+    db: Session = Depends(get_db)
 ):
     """
-    Pulling real-time data from the latest snapshot
+    Pulling real-time data from the latest snapshot (Production Ready)
     """
-    latest = db.query(ParkingSnapshot2).filter(
-        ParkingSnapshot2.lot_id == lot_id
-    ).order_by(ParkingSnapshot2.timestamp.desc()).first()
+    if lot_id == "CAMT_01":
+        model = ParkingSnapshot
+    elif lot_id == "CAMT_02":
+        model = ParkingSnapshot2
+    else:
+        raise HTTPException(status_code=400, detail="Invalid Parking Lot ID")
 
-    # ----------------------------------------------------
-    # 🚨 โซน Mockup: ถ้ายังไม่มีข้อมูลใน DB ให้ส่งข้อมูลทิพย์ไปโชว์ก่อน
-    # ----------------------------------------------------
+    latest = db.query(model).filter(
+        model.lot_id == lot_id
+    ).order_by(model.timestamp.desc()).first()
+
     if not latest:
-        if lot_id == "CAMT_02":
-            return {
-                "available_spaces": 26,
-                "total_spaces": 41,
-                "occupied_spaces": 15,
-                "occupacy_rate": 36.5
-            }
-        elif lot_id == "CAMT_01":
-            return {
-                "available_spaces": 6,
-                "total_spaces": 34,
-                "occupied_spaces": 28,
-                "occupacy_rate": 82.3
-            }
+        raise HTTPException(
+            status_code=404,
+            detail="No real-time data available. Waiting for camera sensor ingestion."
+        )
 
-        # ถ้าเป็นลานอื่นที่ไม่ได้ Mock ไว้ ค่อยพ่น 404
-        raise HTTPException(status_code=404, detail="No parking data found in the database")
-
-    # ----------------------------------------------------
-    # ✅ โซนของจริง: ถ้ามีข้อมูลใน DB แล้ว ก็ดึงของจริงมาใช้เลย
-    # ----------------------------------------------------
     return {
         "available_spaces": latest.available_spaces,
         "total_spaces": latest.total_spaces,
         "occupied_spaces": latest.occupied_spaces,
         "occupacy_rate": latest.occupacy_rate
     }
+
+# ==========================================
+# 2. System Health API (โชว์สถานะ 1 บอร์ด 2 กล้อง)
+# ==========================================
+
+@router.get("/health", response_model=SystemHealthResponse)
+def get_system_health(
+        lot_id: str = Query("CAMT_01", description="Parking Lot ID"),
+        db: Session = Depends(get_db)
+):
+    """
+    ตรวจสอบว่าระบบบอร์ด Orange Pi และกล้องทั้ง 2 ตัวยังทำงานปกติหรือไม่
+    """
+    service = AnalyticsService(db)
+    return service.get_system_health_status(lot_id)
+
+
+# ==========================================
+# 3. Hardware Ingestion API (รับข้อมูลจาก Orange Pi)
+# ==========================================
+
+@router.post("/heartbeat")
+def receive_hardware_heartbeat(
+        payload: DeviceHeartbeatPayload,
+        db: Session = Depends(get_db)
+):
+    """
+    รับสัญญาณ Heartbeat จาก Orange Pi เพื่ออัปเดตสถานะของ Board และ Camera
+    (ควรให้ Orange Pi ยิงมาหาเส้นนี้ทุกๆ 1 นาที แม้จะไม่มีรถเข้าออกก็ตาม)
+    """
+    service = AnalyticsService(db)
+    success = service.update_hardware_heartbeat(payload)
+
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to update heartbeat")
+
+    return {"status": "success", "message": "Heartbeat received and logged"}
+
+
+@router.post("/camera/events")
+def receive_camera_events(
+        payload: CameraEventPayload,
+        db: Session = Depends(get_db)
+):
+    """
+    รับข้อมูลเมื่อมีรถเข้าหรือออกช่องจอด
+    นำไปบันทึกลง ParkingEventLog และอัปเดต ParkingSnapshot
+    """
+    service = AnalyticsService(db)
+    result = service.process_camera_events(payload)
+
+    return {"status": "success", "message": result}
