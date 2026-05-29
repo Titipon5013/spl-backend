@@ -1,4 +1,4 @@
-from sqlalchemy import Integer, String, Column, Enum, DateTime, func, ForeignKey, Float
+from sqlalchemy import Integer, String, Column, Enum, DateTime, func, ForeignKey, Float, Boolean
 from sqlalchemy.orm import DeclarativeBase, relationship, Mapped, mapped_column
 from enums import RoleEnum
 from enums import RequestStatus
@@ -91,3 +91,21 @@ class EntryRecord(Base):
     plate_number = Column(String, nullable=False)
     plate_image_url = Column(String, nullable=False)
     timestamp = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class ParkingEventLog(Base):
+    __tablename__ = "parking_event_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    lot_id = Column(String(50), index=True)
+    spot_id = Column(String(50), index=True)
+    is_occupied = Column(Boolean, default=False)
+    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
+
+class DeviceHealth(Base):
+    __tablename__ = "device_health"
+    id = Column(Integer, primary_key=True, index=True)
+    device_id = Column(String(50), index=True, unique=True)  # เช่น "orange_pi_main"
+    device_type = Column(String(20))                         # "board", "camera_1", "camera_2"
+    status = Column(String(20))                              # "online", "offline"
+    last_seen = Column(DateTime, default=datetime.utcnow)
