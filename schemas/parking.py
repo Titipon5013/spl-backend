@@ -1,6 +1,11 @@
 from pydantic import BaseModel, Field
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
+
+
+class SpotDetail(BaseModel):
+    spot_id: str
+    is_occupied: bool
 
 
 class ParkingPayload(BaseModel):
@@ -13,6 +18,7 @@ class ParkingPayload(BaseModel):
     confidence: float
     processing_time_seconds: float
 
+    spot_details: Optional[List[SpotDetail]] = []
 
 
 class ParkingSnapshotCreate(ParkingPayload):
