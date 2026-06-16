@@ -1,7 +1,6 @@
 from sqlalchemy import Integer, String, Column, Enum, DateTime, func, ForeignKey, Float, Boolean
 from sqlalchemy.orm import DeclarativeBase, relationship, Mapped, mapped_column
-from enums import RoleEnum
-from enums import RequestStatus
+from enums import RoleEnum, RequestStatus, ApprovalStatus, AuthProvider
 from datetime import datetime
 
 class Base(DeclarativeBase):
@@ -14,8 +13,21 @@ class Admin(Base):
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String, unique=True, index=True)
     email = Column(String, unique=True, index=True)
-    hashed_password = Column(String)
+    hashed_password = Column(String, nullable=True)
     role = Column(Enum(RoleEnum, name="roleenum"), nullable=False, default=RoleEnum.operator)
+    oauth_sub = Column(String, unique=True, index=True, nullable=True)
+    auth_provider = Column(
+        Enum(AuthProvider, name="authprovider"),
+        nullable=False,
+        default=AuthProvider.local,
+    )
+    approval_status = Column(
+        Enum(ApprovalStatus, name="approvalstatus"),
+        nullable=False,
+        default=ApprovalStatus.approved,
+    )
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    revoked_at = Column(DateTime, nullable=True)
 
 
 class ParkingSnapshot(Base):

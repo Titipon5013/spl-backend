@@ -4,7 +4,7 @@ from schemas.admin import AdminOut, AdminResponse, AdminCreate, AdminUpdate
 from db.models import Admin
 from passlib.context import CryptContext
 from pydantic import ValidationError
-from enums import RoleEnum
+from enums import RoleEnum, ApprovalStatus, AuthProvider
 from auth.utils import authorize_admin_or_self
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -49,6 +49,8 @@ class AdminService:
             email=admin.email,
             hashed_password=pwd_context.hash(admin.password),
             role=admin.role,
+            auth_provider=AuthProvider.local,
+            approval_status=ApprovalStatus.approved,
         )
         created_admin = self.admin_repo.create_admin(new_admin)
         return AdminResponse.model_validate(created_admin)
