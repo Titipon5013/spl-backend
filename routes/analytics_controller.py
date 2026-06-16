@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from db.session import get_db
 from services.analytics_service import AnalyticsService
 from schemas.analytics import HeatmapResponse, TrendResponse
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 from db.models import ParkingSnapshot, ParkingSnapshot2
 
@@ -26,6 +26,31 @@ def get_spatial_heatmap(
 ):
     service = AnalyticsService(db)
     return service.get_heatmap_data(lot_id, start_date, end_date)
+
+@router.get("/kpis")
+def get_kpis(
+    lot_id: str = Query("CAMT_01", description="Parking Lot ID"),
+    start_date: Optional[datetime] = Query(None, description="Started Time"),
+    end_date: Optional[datetime] = Query(None, description="Ended Time"),
+    db: Session = Depends(get_db),
+):
+    service = AnalyticsService(db)
+    end = end_date or datetime.utcnow()
+    start = start_date or (end - timedelta(days=7))
+    return service.get_kpis(lot_id, start, end)
+
+
+@router.get("/slots/{spot_id}/events")
+def get_slot_event_history(
+    spot_id: str,
+    lot_id: str = Query("CAMT_01", description="Parking Lot ID"),
+    start_date: Optional[datetime] = Query(None, description="Started Time"),
+    end_date: Optional[datetime] = Query(None, description="Ended Time"),
+    db: Session = Depends(get_db),
+):
+    service = AnalyticsService(db)
+    return service.get_slot_event_history(lot_id, spot_id, start_date, end_date)
+
 
 @router.get("/trends", response_model=TrendResponse)
 def get_occupancy_trends(
@@ -69,17 +94,13 @@ def get_current_status(
         "occupacy_rate": latest.occupacy_rate
     }
 
-# ==========================================
-# 2. System Health API (โชว์สถานะ 1 บอร์ด 2 กล้อง)
-# ==========================================
-
 @router.get("/health", response_model=SystemHealthResponse)
 def get_system_health(
         lot_id: str = Query("CAMT_01", description="Parking Lot ID"),
         db: Session = Depends(get_db)
 ):
     """
-    ตรวจสอบว่าระบบบอร์ด Orange Pi และกล้องทั้ง 2 ตัวยังทำงานปกติหรือไม่
+    ตรวจสอบสถานะ Orange Pi และ connected camera streams ทั้ง 4 ตัว
     """
     service = AnalyticsService(db)
     return service.get_system_health_status(lot_id)
