@@ -1,7 +1,6 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import func, cast, Integer
-from db.models import ParkingEventLog, ParkingSnapshot, ParkingSnapshot2, \
-    DeviceHealth  # ⚠️ ดูหมายเหตุด้านล่างเรื่อง DeviceHealth
+from db.models import ParkingEventLog, ParkingSnapshot, ParkingSnapshot2, DeviceHealth, EntryRecord
 from schemas.analytics import (
     HeatmapSpotResponse,
     HeatmapResponse,
@@ -20,6 +19,13 @@ from collections import defaultdict
 class AnalyticsService:
     def __init__(self, db: Session):
         self.db = db
+
+    CAMERA_HEALTH_DEVICES = (
+        ("camera_1", "cam1", "camera_1_status"),
+        ("camera_2", "cam2", "camera_2_status"),
+        ("camera_3", "cam3", "camera_3_status"),
+        ("camera_4", "cam4", "camera_4_status"),
+    )
 
     # ========================================================
     # [1] Analytics Serving (ดึงข้อมูลไปโชว์หน้า Dashboard)
@@ -86,6 +92,88 @@ class AnalyticsService:
 
         return TrendResponse(lot_id=lot_id, peak_hour=peak_hour, trends=trends)
 
+    def get_kpis(self, lot_id: str, start_date: datetime, end_date: datetime) -> dict:
+        model = ParkingSnapshot if lot_id == "CAMT_01" else ParkingSnapshot2
+        snapshots = self.db.query(model).filter(
+            model.lot_id == lot_id,
+            model.timestamp >= start_date,
+            model.timestamp <= end_date,
+        ).all()
+
+        utilization = 0.0
+        peak_occupancy = 0
+        if snapshots:
+            utilization = sum(s.occupacy_rate for s in snapshots) / len(snapshots)
+            peak_occupancy = max(s.occupied_spaces for s in snapshots)
+
+        vehicle_count = self.db.query(EntryRecord).filter(
+            EntryRecord.timestamp >= start_date,
+            EntryRecord.timestamp <= end_date,
+        ).count()
+
+        return {
+            "lot_id": lot_id,
+            "utilization_percentage": round(utilization, 2),
+            "peak_occupancy": peak_occupancy,
+            "vehicle_count": vehicle_count,
+            "avg_dwell_time_minutes": round(self._calculate_avg_dwell_time(lot_id, start_date, end_date), 2),
+        }
+
+    def get_slot_event_history(
+        self,
+        lot_id: str,
+        spot_id: str,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+    ) -> list[dict]:
+        query = self.db.query(ParkingEventLog).filter(
+            ParkingEventLog.lot_id == lot_id,
+            ParkingEventLog.spot_id == spot_id,
+        )
+        if start_date:
+            query = query.filter(ParkingEventLog.timestamp >= start_date)
+        if end_date:
+            query = query.filter(ParkingEventLog.timestamp <= end_date)
+
+        events = query.order_by(ParkingEventLog.timestamp.desc()).limit(100).all()
+        return [
+            {
+                "event_id": event.id,
+                "spot_id": event.spot_id,
+                "state": "occupied" if event.is_occupied else "free",
+                "timestamp": event.timestamp.isoformat(),
+            }
+            for event in events
+        ]
+
+    def _calculate_avg_dwell_time(
+        self, lot_id: str, start_date: datetime, end_date: datetime
+    ) -> float:
+        events = (
+            self.db.query(ParkingEventLog)
+            .filter(
+                ParkingEventLog.lot_id == lot_id,
+                ParkingEventLog.timestamp >= start_date,
+                ParkingEventLog.timestamp <= end_date,
+            )
+            .order_by(ParkingEventLog.spot_id, ParkingEventLog.timestamp)
+            .all()
+        )
+
+        dwell_minutes: list[float] = []
+        occupied_at: dict[str, datetime] = {}
+
+        for event in events:
+            if event.is_occupied:
+                occupied_at[event.spot_id] = event.timestamp
+            elif event.spot_id in occupied_at:
+                delta = (event.timestamp - occupied_at[event.spot_id]).total_seconds() / 60
+                if delta > 0:
+                    dwell_minutes.append(delta)
+                del occupied_at[event.spot_id]
+
+        return sum(dwell_minutes) / len(dwell_minutes) if dwell_minutes else 0.0
+
     # ========================================================
     # [2] Hardware Ingestion (รับข้อมูลจาก Orange Pi)
     # ========================================================
@@ -110,6 +198,8 @@ class AnalyticsService:
             available_spaces=payload.available_spaces,
             occupied_spaces=payload.occupied_spaces,
             occupacy_rate=occupancy_rate,
+            confidence=payload.confidence,
+            processing_time_seconds=payload.processing_time_seconds,
             timestamp=datetime.utcnow()
         )
         self.db.add(new_snapshot)
@@ -124,10 +214,13 @@ class AnalyticsService:
     # ========================================================
     def update_hardware_heartbeat(self, payload: DeviceHeartbeatPayload) -> bool:
         try:
-            # ฟังก์ชันช่วยบันทึก/อัปเดตข้อมูลอุปกรณ์ (Upsert)
             self._upsert_device_health("board", payload.board_id, payload.board_status)
-            self._upsert_device_health("camera_1", f"{payload.board_id}_cam1", payload.camera_1_status)
-            self._upsert_device_health("camera_2", f"{payload.board_id}_cam2", payload.camera_2_status)
+            for device_type, device_suffix, status_attr in self.CAMERA_HEALTH_DEVICES:
+                self._upsert_device_health(
+                    device_type,
+                    f"{payload.board_id}_{device_suffix}",
+                    getattr(payload, status_attr),
+                )
             self.db.commit()
             return True
         except Exception as e:
@@ -160,19 +253,41 @@ class AnalyticsService:
         board_stat = get_device_status("board")
         cam1_stat = get_device_status("camera_1")
         cam2_stat = get_device_status("camera_2")
+        cam3_stat = get_device_status("camera_3")
+        cam4_stat = get_device_status("camera_4")
+        camera_stats = (cam1_stat, cam2_stat, cam3_stat, cam4_stat)
 
         # ประเมินสถานะภาพรวมของระบบ (System Status)
         if board_stat.status == "offline":
             sys_status = "Critical"  # บอร์ดดับ = พังทั้งระบบ
-        elif cam1_stat.status == "offline" or cam2_stat.status == "offline":
+        elif any(camera.status == "offline" for camera in camera_stats):
             sys_status = "Degraded"  # บอร์ดติด แต่กล้องตัวใดตัวหนึ่งดับ
         else:
             sys_status = "Healthy"  # ปกติดีทุกตัว
 
+        uptime = round(
+            (
+                self._device_uptime_score(board_stat)
+                + sum(self._device_uptime_score(camera) for camera in camera_stats)
+            )
+            / 5,
+            2,
+        )
+
         return SystemHealthResponse(
             system_status=sys_status,
-            uptime_percentage=99.8,  # สามารถเขียนสูตรคำนวณ Uptime จริงทีหลังได้
+            uptime_percentage=uptime,
             board=board_stat,
             camera_1=cam1_stat,
-            camera_2=cam2_stat
+            camera_2=cam2_stat,
+            camera_3=cam3_stat,
+            camera_4=cam4_stat
         )
+
+    def _device_uptime_score(self, device: DeviceStatus) -> float:
+        if device.status != "online" or not device.last_seen:
+            return 0.0
+        age_seconds = (datetime.utcnow() - device.last_seen).total_seconds()
+        if age_seconds > 300:
+            return 0.0
+        return max(0.0, 100.0 - (age_seconds / 300) * 20)
