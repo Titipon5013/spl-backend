@@ -75,3 +75,100 @@ The following are the primary API endpoints provided by the backend:
     ```
 
 The backend server will now be running and accessible at `http://localhost:8000`.
+
+## Running the Backend with Docker
+
+Use this section when running the backend container locally against PostgreSQL on your machine.
+
+### 1. Build the backend image
+
+```bash
+docker build -t spl-backend:local .
+```
+
+### 2. Configure `.env`
+
+The app reads database settings from `DATABASE_URL`.
+
+Linux local PostgreSQL:
+
+```env
+DATABASE_URL=postgresql+psycopg2://postgres:<password>@127.0.0.1:5432/smartparkinglot
+```
+
+Windows Docker Desktop local PostgreSQL:
+
+```env
+DATABASE_URL=postgresql+psycopg2://postgres:<password>@host.docker.internal:5432/smartparkinglot
+```
+
+If your PostgreSQL uses a different exposed port, replace `5432` with that port.
+
+### 3. Run on Linux
+
+When PostgreSQL is running directly on Linux and only listens on localhost, run the backend container with host networking:
+
+```bash
+docker rm -f spl-backend 2>/dev/null || true
+docker run --rm -d --name spl-backend --network host --env-file .env spl-backend:local
+```
+
+The API will be available at:
+
+```text
+http://127.0.0.1:8000
+```
+
+### 4. Run on Windows
+
+On Windows Docker Desktop, keep normal port publishing and use `host.docker.internal` in `DATABASE_URL`:
+
+```powershell
+docker rm -f spl-backend
+docker run --rm -d --name spl-backend --env-file .env -p 8000:8000 spl-backend:local
+```
+
+The API will be available at:
+
+```text
+http://127.0.0.1:8000
+```
+
+### 5. Verify the backend
+
+Open the docs:
+
+```bash
+curl http://127.0.0.1:8000/docs
+```
+
+Test login with the seeded admin account:
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/login \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  --data-urlencode "username=<SEED_EMAIL>" \
+  --data-urlencode "password=<SEED_PASSWORD>"
+```
+
+Expected result: HTTP `200 OK` with an `access_token`.
+
+## Notes for Windows `.env` Files
+
+If your `.env` came from a Windows machine, Linux may not run with the same `DATABASE_URL`.
+
+- Windows Docker Desktop can usually use `host.docker.internal`.
+- Linux Docker often cannot resolve `host.docker.internal` unless it is configured manually.
+- If PostgreSQL runs on the Linux host and listens only on `127.0.0.1`, use `DATABASE_URL=...@127.0.0.1:5432/...` and run the backend with `--network host`.
+- If PostgreSQL runs in another Docker container, do not use `127.0.0.1`; put both containers on the same Docker network and use the PostgreSQL container/service name as the host.
+- `SEED_EMAIL`, `SEED_USERNAME`, and `SEED_PASSWORD` are credentials used for the admin account, but this codebase does not automatically create that admin row on startup. The `admins` table must already contain that email with a bcrypt-hashed password.
+
+For the current local Linux setup, the working combination is:
+
+```env
+DATABASE_URL=postgresql+psycopg2://postgres:<password>@127.0.0.1:5432/smartparkinglot
+```
+
+```bash
+docker run --rm -d --name spl-backend --network host --env-file .env spl-backend:local
+```
