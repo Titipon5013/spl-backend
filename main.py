@@ -11,6 +11,10 @@ from routes.admin_controller import router as user_router
 from routes.entry_record_controller import router as entry_record_router
 from routes.analytics_controller import router as analytics_router
 from routes.webhook_controller import router as webhook_router
+from routes.oauth_controller import router as oauth_router
+from routes.admin_access_controller import router as admin_access_router
+from routes.report_controller import router as report_router
+from services.report_scheduler import start_report_scheduler, stop_report_scheduler
 
 from dotenv import load_dotenv
 from mqtt.client import mqttClient
@@ -26,8 +30,9 @@ mqtt_client = mqttClient()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     mqtt_client.start_mqtt()
-    # Base.metadata.create_all(bind=engine)
+    start_report_scheduler()
     yield
+    stop_report_scheduler()
     mqtt_client.stop_mqtt()
 
 
@@ -57,3 +62,6 @@ app.include_router(plate_router)
 app.include_router(entry_record_router)
 app.include_router(analytics_router, prefix="/api/analytics", tags=["Analytics Dashboard"])
 app.include_router(webhook_router, prefix="/webhook", tags=["LINE Chatbot"])
+app.include_router(oauth_router)
+app.include_router(admin_access_router)
+app.include_router(report_router)
