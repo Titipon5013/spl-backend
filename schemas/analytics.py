@@ -27,28 +27,26 @@ class TrendResponse(BaseModel):
     peak_hour: Optional[str] = None
     trends: List[TrendDataPoint]
 
-# ==========================================
-# 3. System Health Schemas (แก้ใหม่ให้รองรับ 1 บอร์ด 2 กล้อง)
-# ==========================================
 class DeviceStatus(BaseModel):
-    status: str                         # "online" หรือ "offline"
+    status: str
     last_seen: Optional[datetime] = None
 
 class SystemHealthResponse(BaseModel):
-    system_status: str                  # "Healthy", "Degraded", หรือ "Critical"
+    system_status: str
     uptime_percentage: float
-    board: DeviceStatus                 # สถานะของ Orange Pi
-    camera_1: DeviceStatus              # สถานะของกล้องตัวที่ 1
-    camera_2: DeviceStatus              # สถานะของกล้องตัวที่ 2
+    board: DeviceStatus
+    camera_1: DeviceStatus
+    camera_2: DeviceStatus
+    camera_3: DeviceStatus
+    camera_4: DeviceStatus
 
-# ==========================================
-# 4. Hardware Ingestion Schemas (เพิ่ม Heartbeat)
-# ==========================================
 class DeviceHeartbeatPayload(BaseModel):
     board_id: str = "orange_pi_main"
-    board_status: str                   # "online"
-    camera_1_status: str                # "online" หรือ "offline"
-    camera_2_status: str                # "online" หรือ "offline"
+    board_status: str
+    camera_1_status: str
+    camera_2_status: str
+    camera_3_status: str = "offline"
+    camera_4_status: str = "offline"
 
 class SpotEvent(BaseModel):
     spot_id: str
@@ -59,4 +57,6 @@ class CameraEventPayload(BaseModel):
     total_spaces: int
     available_spaces: int
     occupied_spaces: int
+    confidence: float = 1.0
+    processing_time_seconds: float = 0.0
     events: List[SpotEvent]
