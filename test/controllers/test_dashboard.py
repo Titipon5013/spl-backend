@@ -14,7 +14,7 @@ def test_get_latest_snapshot_no_data(client, mock_parking_service):
     app.dependency_overrides[get_parking_service] = lambda: mock_parking_service
     mock_parking_service.get_latest_snapshot.side_effect = HTTPException(status_code=404, detail="No parking snapshot found")
     
-    response = client.get("/parking/snapshot/latest")
+    response = client.get("/api/parking/snapshot/latest")
     
     assert response.status_code == 404
     assert response.json() == {"detail": "No parking snapshot found"}
@@ -33,7 +33,7 @@ def test_get_latest_snapshot_with_data(client, mock_parking_service):
     )
     mock_parking_service.get_latest_snapshot.return_value = mock_snapshot
     
-    response = client.get("/parking/snapshot/latest")
+    response = client.get("/api/parking/snapshot/latest")
     
     assert response.status_code == 200
     data = response.json()

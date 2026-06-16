@@ -34,7 +34,7 @@ def test_register_plate_success(mock_plate_request_service):
     file_content = b"fake image data"
     files = {"photo": ("test.jpg", io.BytesIO(file_content), "image/jpeg")}
 
-    response = client.post("/register", data=form_data, files=files)
+    response = client.post("/api/register", data=form_data, files=files)
 
     assert response.status_code == 200
     json_response = response.json()
@@ -51,7 +51,7 @@ def test_register_plate_missing_plate_number():
     } # Missing plate_number
     files = {"photo": ("test.jpg", b"fake image data", "image/jpeg")}
 
-    response = client.post("/register", data=form_data, files=files)
+    response = client.post("/api/register", data=form_data, files=files)
     assert response.status_code == 422
     assert "plate_number" in response.text
 
@@ -64,7 +64,7 @@ def test_register_plate_invalid_email():
     }
     files = {"photo": ("test.jpg", b"fake image data", "image/jpeg")}
 
-    response = client.post("/register", data=form_data, files=files)
+    response = client.post("/api/register", data=form_data, files=files)
     assert response.status_code == 422
     assert "email" in response.text
 
@@ -77,6 +77,6 @@ def test_register_plate_no_image():
     }
     # Missing files payload
 
-    response = client.post("/register", data=form_data)
+    response = client.post("/api/register", data=form_data)
     assert response.status_code == 422
     assert "photo" in response.text

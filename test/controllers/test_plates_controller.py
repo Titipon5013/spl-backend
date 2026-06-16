@@ -19,7 +19,7 @@ def test_get_plates(client, mock_plate_service):
         LicensePlateResponse(id=2, user_email="test2@example.com", username="test2", plate_number="456", plate_image_url="url2", status=RequestStatus.pending),
     ]
     
-    response = client.get("/plates")
+    response = client.get("/api/plates")
     
     assert response.status_code == 200
     assert len(response.json()) == 2
@@ -30,21 +30,21 @@ def test_get_plates_unauthorized(client, mock_plate_service):
     app.dependency_overrides[get_plate_service] = lambda: mock_plate_service
     app.dependency_overrides[dependencies.get_current_admin_user] = lambda: None
     
-    response = client.get("/plates")
+    response = client.get("/api/plates")
     
     assert response.status_code == 401
     
     app.dependency_overrides = {}
 
-@patch("routes.plate_controller.upload_to_s3")
-def test_create_plate(mock_upload_to_s3, client, mock_plate_service):
+@patch("routes.plate_controller.s3_cloudfront.upload_file")
+def test_create_plate(mock_upload_file, client, mock_plate_service):
     app.dependency_overrides[get_plate_service] = lambda: mock_plate_service
     app.dependency_overrides[dependencies.get_current_admin_user] = lambda: MagicMock()
-    mock_upload_to_s3.return_value = "fake_url"
+    mock_upload_file.return_value = "fake_url"
     mock_plate_service.create_plate.return_value = LicensePlateResponse(id=1, user_email="test@example.com", username="test", plate_number="123", plate_image_url="fake_url", status=RequestStatus.pending)
     
     response = client.post(
-        "/plates",
+        "/api/plates",
         data={"email": "test@example.com", "name": "test", "plateNumber": "123"},
         files={"photo": ("test.jpg", b"test", "image/jpeg")},
     )
@@ -59,7 +59,7 @@ def test_create_plate_unauthorized(client, mock_plate_service):
     app.dependency_overrides[dependencies.get_current_admin_user] = lambda: None
     
     response = client.post(
-        "/plates",
+        "/api/plates",
         data={"email": "test@example.com", "name": "test", "plateNumber": "123"},
         files={"photo": ("test.jpg", b"test", "image/jpeg")},
     )
@@ -73,7 +73,7 @@ def test_update_plate(client, mock_plate_service):
     app.dependency_overrides[dependencies.get_current_admin_user] = lambda: MagicMock()
     mock_plate_service.update_plate.return_value = LicensePlateResponse(id=1, user_email="test@example.com", username="test", plate_number="123", plate_image_url="url", status=RequestStatus.approved)
     
-    response = client.put("/plates/1", data={"plate_number": "456", "user_email": "test@example.com", "username": "test"})
+    response = client.put("/api/plates/1", data={"plate_number": "456", "user_email": "test@example.com", "username": "test"})
     
     assert response.status_code == 200
     
@@ -84,7 +84,7 @@ def test_update_plate_not_found(client, mock_plate_service):
     app.dependency_overrides[dependencies.get_current_admin_user] = lambda: MagicMock()
     mock_plate_service.update_plate.side_effect = HTTPException(status_code=404, detail="Plate not found")
     
-    response = client.put("/plates/1", data={"plate_number": "456", "user_email": "test@example.com", "username": "test"})
+    response = client.put("/api/plates/1", data={"plate_number": "456", "user_email": "test@example.com", "username": "test"})
     
     assert response.status_code == 404
     
@@ -95,7 +95,7 @@ def test_update_plate_unauthorized(client, mock_plate_service):
     app.dependency_overrides[dependencies.get_current_admin_user] = lambda: MagicMock()
     mock_plate_service.update_plate.side_effect = HTTPException(status_code=403, detail="Forbidden")
     
-    response = client.put("/plates/1", data={"plate_number": "456", "user_email": "test@example.com", "username": "test"})
+    response = client.put("/api/plates/1", data={"plate_number": "456", "user_email": "test@example.com", "username": "test"})
     
     assert response.status_code == 403
     
@@ -106,7 +106,7 @@ def test_delete_plate(client, mock_plate_service):
     app.dependency_overrides[dependencies.get_current_admin_user] = lambda: MagicMock()
     mock_plate_service.delete_plate.return_value = None
     
-    response = client.delete("/plates/1")
+    response = client.delete("/api/plates/1")
     
     assert response.status_code == 200
     
@@ -117,7 +117,7 @@ def test_delete_plate_not_found(client, mock_plate_service):
     app.dependency_overrides[dependencies.get_current_admin_user] = lambda: MagicMock()
     mock_plate_service.delete_plate.side_effect = HTTPException(status_code=404, detail="Plate not found")
     
-    response = client.delete("/plates/1")
+    response = client.delete("/api/plates/1")
     
     assert response.status_code == 404
     
@@ -128,7 +128,7 @@ def test_delete_plate_unauthorized(client, mock_plate_service):
     app.dependency_overrides[dependencies.get_current_admin_user] = lambda: MagicMock()
     mock_plate_service.delete_plate.side_effect = HTTPException(status_code=403, detail="Forbidden")
     
-    response = client.delete("/plates/1")
+    response = client.delete("/api/plates/1")
     
     assert response.status_code == 403
     

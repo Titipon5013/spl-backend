@@ -35,30 +35,41 @@ def test_get_all_plate_requests_unauthorized(plate_request_service):
         plate_request_service.get_all_plate_requests(mock_user)
     assert exc_info.value.status_code == 401
 
-@patch('services.plate_request_service.upload_to_s3')
-def test_create_plate_request(mock_upload_to_s3, plate_request_service, mock_repo):
-    mock_upload_to_s3.return_value = "http://s3.com/image.jpg"
+def test_create_plate_request(mock_repo):
+    service = PlateRequestService(mock_repo)
+    service.s3_cloudfront = MagicMock()
+    service.s3_cloudfront.upload_file.return_value = "http://s3.com/image.jpg"
+
+    mock_photo = MagicMock()
+    mock_photo.file = MagicMock()
+    mock_photo.filename = "plate.jpg"
     form_data = {
         "name": "test",
         "email": "test@example.com",
         "plate_number": "NEW-123",
-        "plate_photo": "fake_photo_data"
+        "plate_photo": mock_photo,
     }
-    
+
     request_data = LicensePlateRequestCreate(
         username=form_data["name"],
         user_email=form_data["email"],
         plate_number=form_data["plate_number"],
         plate_image_url="http://s3.com/image.jpg",
-        status=RequestStatus.pending
+        status=RequestStatus.pending,
     )
-    
-    mock_created_request = LicensePlateRequest(id=3, plate_number="NEW-123", user_id=1, plate_image_url="http://s3.com/image.jpg", status=RequestStatus.pending)
+
+    mock_created_request = LicensePlateRequest(
+        id=3,
+        plate_number="NEW-123",
+        user_id=1,
+        plate_image_url="http://s3.com/image.jpg",
+        status=RequestStatus.pending,
+    )
     mock_repo.create_license_plate_request.return_value = mock_created_request
 
-    result = plate_request_service.create_plate_request(form_data)
+    result = service.create_plate_request(form_data)
 
-    mock_upload_to_s3.assert_called_once_with("fake_photo_data")
+    service.s3_cloudfront.upload_file.assert_called_once_with(mock_photo.file, "plate.jpg")
     mock_repo.create_license_plate_request.assert_called_once_with(request_data)
     assert result == mock_created_request
 

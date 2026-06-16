@@ -22,34 +22,31 @@ def test_get_all_user(mock_admin_service, mock_current_user):
     app.dependency_overrides[get_admin_service] = lambda: mock_admin_service
     app.dependency_overrides[get_current_admin_user] = lambda: mock_current_user
     
-    mock_admin_service.get_all_admins.return_value = [
-        AdminResponse(id=1, username="test1", email="test1@example.com", role=RoleEnum.admin),
-        AdminResponse(id=2, username="test2", email="test2@example.com", role=RoleEnum.operator)
-    ]
+    mock_admin_service.get_all_admins.return_value = {
+        "admins": [
+            AdminResponse(id=1, username="test1", email="test1@example.com", role=RoleEnum.admin),
+            AdminResponse(id=2, username="test2", email="test2@example.com", role=RoleEnum.operator),
+        ],
+        "total_pages": 1,
+    }
     
     # Execute
-    response = client.get("/admins/")
+    response = client.get("/api/admins")
     
     # Assert
     assert response.status_code == 200
-    assert len(response.json()) == 2
+    assert len(response.json()["admins"]) == 2
     mock_admin_service.get_all_admins.assert_called_once()
     
     # Teardown
     app.dependency_overrides = {}
 
 def test_get_all_user_unauthorized(mock_admin_service):
-    # Setup
     app.dependency_overrides[get_admin_service] = lambda: mock_admin_service
-    app.dependency_overrides[get_current_admin_user] = lambda: None
-    
-    # Execute
-    response = client.get("/admins/")
-    
-    # Assert
+
+    response = client.get("/api/admins")
+
     assert response.status_code == 401
-    
-    # Teardown
     app.dependency_overrides = {}
 
 def test_create_user(mock_admin_service, mock_current_user):
@@ -61,7 +58,7 @@ def test_create_user(mock_admin_service, mock_current_user):
     mock_admin_service.create_admin.return_value = AdminResponse(id=3, username="newadmin", email="new@example.com", role=RoleEnum.admin)
     
     # Execute
-    response = client.post("/admins/", json=new_admin.model_dump())
+    response = client.post("/api/admins", json=new_admin.model_dump())
     
     # Assert
     assert response.status_code == 201
@@ -71,19 +68,12 @@ def test_create_user(mock_admin_service, mock_current_user):
     app.dependency_overrides = {}
 
 def test_create_user_unauthorized(mock_admin_service):
-    # Setup
     app.dependency_overrides[get_admin_service] = lambda: mock_admin_service
-    app.dependency_overrides[get_current_admin_user] = lambda: None
-    
     new_admin = AdminCreate(username="newadmin", email="new@example.com", password="password", role=RoleEnum.admin)
-    
-    # Execute
-    response = client.post("/admins/", json=new_admin.model_dump())
-    
-    # Assert
+
+    response = client.post("/api/admins", json=new_admin.model_dump())
+
     assert response.status_code == 401
-    
-    # Teardown
     app.dependency_overrides = {}
 
 def test_edit_user(mock_admin_service, mock_current_user):
@@ -95,7 +85,7 @@ def test_edit_user(mock_admin_service, mock_current_user):
     mock_admin_service.update_admin.return_value = AdminResponse(id=1, username="updated", email="test1@example.com", role=RoleEnum.admin)
     
     # Execute
-    response = client.patch("/admins/1", json=admin_update.model_dump(exclude_unset=True))
+    response = client.patch("/api/admins/1", json=admin_update.model_dump(exclude_unset=True))
     
     # Assert
     assert response.status_code == 200
@@ -105,19 +95,12 @@ def test_edit_user(mock_admin_service, mock_current_user):
     app.dependency_overrides = {}
 
 def test_edit_user_unauthorized(mock_admin_service):
-    # Setup
     app.dependency_overrides[get_admin_service] = lambda: mock_admin_service
-    app.dependency_overrides[get_current_admin_user] = lambda: None
-    
     admin_update = AdminUpdate(username="updated", role=RoleEnum.admin)
-    
-    # Execute
-    response = client.patch("/admins/1", json=admin_update.model_dump(exclude_unset=True))
-    
-    # Assert
+
+    response = client.patch("/api/admins/1", json=admin_update.model_dump(exclude_unset=True))
+
     assert response.status_code == 401
-    
-    # Teardown
     app.dependency_overrides = {}
 
 def test_delete_user(mock_admin_service, mock_current_user):
@@ -126,7 +109,7 @@ def test_delete_user(mock_admin_service, mock_current_user):
     app.dependency_overrides[get_current_admin_user] = lambda: mock_current_user
     
     # Execute
-    response = client.delete("/admins/1")
+    response = client.delete("/api/admins/1")
     
     # Assert
     assert response.status_code == 204
@@ -136,15 +119,9 @@ def test_delete_user(mock_admin_service, mock_current_user):
     app.dependency_overrides = {}
 
 def test_delete_user_unauthorized(mock_admin_service):
-    # Setup
     app.dependency_overrides[get_admin_service] = lambda: mock_admin_service
-    app.dependency_overrides[get_current_admin_user] = lambda: None
-    
-    # Execute
-    response = client.delete("/admins/1")
-    
-    # Assert
+
+    response = client.delete("/api/admins/1")
+
     assert response.status_code == 401
-    
-    # Teardown
     app.dependency_overrides = {}
