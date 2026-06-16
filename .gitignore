@@ -1,9 +1,10 @@
 .venv
 .env
+.pytest_cache
+test.db
 __pycache__
 .idea
 migrations
 
 progress1/
 proposal/
-
