@@ -3,6 +3,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from services.admin_service import AdminService
 from auth.dependencies import create_access_token
 from services.dependencies import get_admin_service
+from enums import ApprovalStatus
 
 login_router: APIRouter = APIRouter(tags=["Login"])
 
@@ -18,6 +19,12 @@ def login(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",
             headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if admin.approval_status != ApprovalStatus.approved:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Administrator access is {admin.approval_status.value}",
         )
 
     access_token = create_access_token(

@@ -7,11 +7,12 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 from db import session, models
 from schemas.admin import AdminOut
+from enums import ApprovalStatus
 import os
 from dotenv import load_dotenv
 
 load_dotenv()
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/login")
 
 ALOGRITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
@@ -68,9 +69,14 @@ async def get_current_admin_user(
 
     try:
         token_data = verify_access_token(token, credentials_exception)
-        user = db.query(models.Admin).filter(models.Admin.id == token_data.id).first()
+        user = db.query(models.Admin).filter(models.Admin.id == int(token_data.id)).first()
         if not user:
             raise credentials_exception
+        if user.approval_status != ApprovalStatus.approved:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Administrator access is {user.approval_status.value}",
+            )
         return AdminOut.model_validate(user)
     except JWTError:
         raise credentials_exception
