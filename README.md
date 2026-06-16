@@ -76,6 +76,22 @@ The following are the primary API endpoints provided by the backend:
 
 The backend server will now be running and accessible at `http://localhost:8000`.
 
+### Simulate Camera Ingestion Locally
+
+Use this when the Orange Pi / camera detector is not available but you want to
+prove that dashboard data is persisted through the real ingestion API.
+
+```bash
+python scripts/simulate_camera_events.py --api-url http://127.0.0.1:8000 --count 5 --interval 5
+```
+
+The simulator sends:
+
+- `POST /api/analytics/heartbeat`
+- `POST /api/analytics/camera/events`
+
+Use `--dry-run` to print payloads without sending them.
+
 ## Running the Backend with Docker
 
 Use this section when running the backend container locally against PostgreSQL on your machine.
