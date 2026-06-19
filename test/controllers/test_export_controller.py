@@ -100,3 +100,71 @@ def test_trigger_weekly_report(mock_run, client, approved_admin):
     )
     assert response.status_code == 200
     mock_run.assert_called_once()
+
+
+def test_weekly_scheduler_dispatches_reports_to_approved_admins(db_session, approved_admin):
+    from services import report_scheduler
+
+    export_payloads = {
+        "csv": (b"csv-report", "weekly-report.csv", "text/csv"),
+        "pdf": (b"%PDF-report", "weekly-report.pdf", "application/pdf"),
+    }
+
+    with patch.object(
+        report_scheduler.ExportService,
+        "export_analytics",
+        side_effect=lambda _lot_id, _start_date, _end_date, export_format: export_payloads[export_format],
+    ) as mock_export, patch.object(
+        report_scheduler.EmailService,
+        "send_weekly_report",
+    ) as mock_send:
+        report_scheduler._run_weekly_reports()
+
+    assert mock_export.call_count == 4
+    mock_send.assert_any_call(approved_admin.email, b"csv-report", b"%PDF-report")
+    assert mock_send.call_count == 2
+
+
+def test_start_report_scheduler_registers_weekly_cron_job(monkeypatch):
+    from services import report_scheduler
+
+    class FakeScheduler:
+        def __init__(self):
+            self.jobs = []
+            self.started = False
+
+        def add_job(self, func, **kwargs):
+            self.jobs.append((func, kwargs))
+
+        def start(self):
+            self.started = True
+
+        def shutdown(self, wait=False):
+            self.started = False
+
+    fake_scheduler = FakeScheduler()
+    monkeypatch.setattr(report_scheduler, "_scheduler", None)
+    monkeypatch.setattr(report_scheduler, "BackgroundScheduler", lambda: fake_scheduler)
+    monkeypatch.setenv("WEEKLY_REPORT_DAY", "fri")
+    monkeypatch.setenv("WEEKLY_REPORT_HOUR", "9")
+    monkeypatch.setenv("WEEKLY_REPORT_MINUTE", "30")
+
+    scheduler = report_scheduler.start_report_scheduler()
+
+    assert scheduler is fake_scheduler
+    assert fake_scheduler.started is True
+    assert fake_scheduler.jobs == [
+        (
+            report_scheduler._run_weekly_reports,
+            {
+                "trigger": "cron",
+                "day_of_week": "fri",
+                "hour": 9,
+                "minute": 30,
+                "id": "weekly_parkpilot_report",
+                "replace_existing": True,
+            },
+        )
+    ]
+
+    report_scheduler.stop_report_scheduler()
