@@ -1,3 +1,5 @@
+from dotenv import load_dotenv
+load_dotenv()
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
@@ -16,11 +18,9 @@ from routes.admin_access_controller import router as admin_access_router
 from routes.report_controller import router as report_router
 from services.report_scheduler import start_report_scheduler, stop_report_scheduler
 
-from dotenv import load_dotenv
 from mqtt.client import mqttClient
 import os
 
-load_dotenv()
 
 BROKER_HOST = os.getenv("MQTT_BROKER_HOST", default="localhost")
 MQTT_USER = os.getenv("MQTT_USER")
