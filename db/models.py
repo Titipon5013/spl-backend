@@ -39,7 +39,7 @@ class ParkingSnapshot(Base):
     available_spaces = Column(Integer, nullable=False)
     total_spaces = Column(Integer, default=30, nullable=False)
     occupied_spaces = Column(Integer, nullable=False)
-    occupacy_rate = Column(Float, nullable=False)
+    occupacy_rate = Column(Float, nullable=False)  # 👈 พิมพ์ตกตัว n ไป
     confidence= Column(Float, nullable=False)
     processing_time_seconds = Column(Float, nullable=False)
 
