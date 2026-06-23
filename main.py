@@ -16,6 +16,10 @@ from routes.webhook_controller import router as webhook_router
 from routes.oauth_controller import router as oauth_router
 from routes.admin_access_controller import router as admin_access_router
 from routes.report_controller import router as report_router
+
+# 👇 1. เพิ่มการ Import camera_event_controller จากโฟลเดอร์ routes
+from routes.camera_event_controller import router as camera_event_router
+
 from services.report_scheduler import start_report_scheduler, stop_report_scheduler
 
 from mqtt.client import mqttClient
@@ -65,3 +69,6 @@ app.include_router(webhook_router, prefix="/webhook", tags=["LINE Chatbot"])
 app.include_router(oauth_router)
 app.include_router(admin_access_router)
 app.include_router(report_router)
+
+# 👇 2. ลงทะเบียน Router ใหม่เข้าสู่แอปพลิเคชัน
+app.include_router(camera_event_router)
