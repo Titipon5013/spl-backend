@@ -10,6 +10,12 @@ class EntryRecordRepository(IEntryRecordRepository):
     def __init__(self, db: Session): 
         self.db = db
 
+    def create_entry_record(self, entry_record: EntryRecord) -> EntryRecord:
+        self.db.add(entry_record)
+        self.db.commit()
+        self.db.refresh(entry_record)
+        return entry_record
+
     def get_all_entry_records(self, start_date: Optional[date] = None, end_date: Optional[date] = None) -> List[EntryRecord]:
         query = self.db.query(EntryRecord).order_by(EntryRecord.timestamp.desc())
         if start_date:

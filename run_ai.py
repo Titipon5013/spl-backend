@@ -14,9 +14,11 @@ os.environ["OPENCV_FFMPEG_READ_ATTEMPTS"] = "100"
 # ==========================================
 # 1. Configuration
 # ==========================================
-API_BASE_URL = "http://127.0.0.1:8000/api"
-CAMERA_URL = "https://spl.camt.cmu.ac.th/parking2/index.m3u8"
-LOT_ID = "CAMT_02"
+API_BASE_URL = os.getenv("PARKPILOT_API_BASE_URL", "http://127.0.0.1:8000/api")
+CAMERA_URL = os.getenv("PARKPILOT_CAMERA_URL", "https://spl.camt.cmu.ac.th/parking2/index.m3u8")
+LOT_ID = os.getenv("PARKPILOT_LOT_ID", "CAMT_02")
+HEARTBEAT_ENDPOINT = "/analytics/heartbeat"
+CAMERA_EVENTS_ENDPOINT = "/analytics/camera/events"
 
 OVERLAP_THRESHOLD = 0.20
 SMOOTH_WINDOW = 20          # ⬆️ เพิ่มจาก 5 → 20 (รถจอดนิ่ง ไม่ต้องตอบสนองเร็ว)
@@ -357,7 +359,7 @@ def main():
         # Heartbeat
         # Heartbeat
         if current_time - last_heartbeat_time > 60:
-            send_api_async("/heartbeat", {
+            send_api_async(HEARTBEAT_ENDPOINT, {
                 "board_id": "ai_server_main",
                 "board_status": "online",
                 "camera_1_status": "online",
@@ -413,7 +415,7 @@ def main():
         # API event ทุก 5 วิ
         if current_time - last_event_time > 5:
             proc_time = time.time() - frame_start_time
-            send_api_async("/camera/events", {
+            send_api_async(CAMERA_EVENTS_ENDPOINT, {
                 "lot_id": LOT_ID,
                 "total_spaces": TOTAL_SPACES,
                 "available_spaces": TOTAL_SPACES - occupied_count,

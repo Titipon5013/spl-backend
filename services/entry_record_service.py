@@ -1,8 +1,9 @@
 from typing import List, Optional
 from fastapi import UploadFile
+from db.models import EntryRecord as EntryRecordModel
 from repository.ientry_record_repository import IEntryRecordRepository
 from schemas.entry_record import EntryRecord, WeeklyUsage
-from datetime import date
+from datetime import date, datetime
 from helpers.s3_cloudfront import S3CloudFront
 import os
 
@@ -20,6 +21,16 @@ class EntryRecordService:
     def get_all_entry_records(self, start_date: Optional[date] = None, end_date: Optional[date] = None) -> List[EntryRecord]:
         db_entry_records = self.entry_record_repository.get_all_entry_records(start_date=start_date, end_date=end_date)
         return [EntryRecord.from_orm(rec) for rec in db_entry_records]
+
+    def create_entry_record(self, plate_number: str, file: UploadFile) -> EntryRecord:
+        file_url = self.s3_cloudfront.upload_file(file.file, file.filename)
+        db_entry_record = EntryRecordModel(
+            plate_number=plate_number,
+            plate_image_url=file_url,
+            timestamp=datetime.utcnow(),
+        )
+        created_record = self.entry_record_repository.create_entry_record(db_entry_record)
+        return EntryRecord.from_orm(created_record)
 
     def update_entry_record(self, entry_id: int, plate_number: str, file: Optional[UploadFile] = None) -> EntryRecord:
         db_entry_record = self.entry_record_repository.get_entry_record_by_id(entry_id)

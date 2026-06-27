@@ -65,10 +65,8 @@ app.include_router(request_router)
 app.include_router(plate_router)
 app.include_router(entry_record_router)
 app.include_router(analytics_router, prefix="/api/analytics", tags=["Analytics Dashboard"])
+app.include_router(camera_event_router, prefix="/api/analytics", tags=["Camera Event Ingestion"])
 app.include_router(webhook_router, prefix="/webhook", tags=["LINE Chatbot"])
 app.include_router(oauth_router)
 app.include_router(admin_access_router)
 app.include_router(report_router)
-
-# 👇 2. ลงทะเบียน Router ใหม่เข้าสู่แอปพลิเคชัน
-app.include_router(camera_event_router)
