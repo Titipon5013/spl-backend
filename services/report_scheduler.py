@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from db.models import Admin
 from db.session import Session
 from enums import ApprovalStatus
+from services.anomaly_service import AnomalyService
 from services.email_service import EmailService
 from services.export_service import ExportService
 
@@ -39,6 +40,25 @@ def _run_weekly_reports():
         db.close()
 
 
+def _run_anomaly_detection():
+    """ตรวจจับความผิดปกติของระบบตามรอบ (URS-13)"""
+    db = Session()
+    try:
+        result = AnomalyService(db).detect_anomalies()
+        if result["new_anomalies"] or result["resolved_anomalies"]:
+            print(
+                f"[anomaly-detector] new={result['new_anomalies']} "
+                f"resolved={result['resolved_anomalies']} "
+                f"open={result['open_anomalies']}"
+            )
+    except Exception as e:
+        # ตัวตรวจจับพังต้องไม่ทำให้ scheduler ตายทั้งตัว
+        print(f"[anomaly-detector] failed: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
+
 def start_report_scheduler():
     global _scheduler
     if _scheduler is not None:
@@ -47,6 +67,7 @@ def start_report_scheduler():
     cron_day = os.getenv("WEEKLY_REPORT_DAY", "mon")
     cron_hour = int(os.getenv("WEEKLY_REPORT_HOUR", "8"))
     cron_minute = int(os.getenv("WEEKLY_REPORT_MINUTE", "0"))
+    anomaly_interval = int(os.getenv("ANOMALY_SCAN_INTERVAL_MINUTES", "5"))
 
     _scheduler = BackgroundScheduler()
     _scheduler.add_job(
@@ -56,6 +77,13 @@ def start_report_scheduler():
         hour=cron_hour,
         minute=cron_minute,
         id="weekly_parkpilot_report",
+        replace_existing=True,
+    )
+    _scheduler.add_job(
+        _run_anomaly_detection,
+        trigger="interval",
+        minutes=anomaly_interval,
+        id="parkpilot_anomaly_detection",
         replace_existing=True,
     )
     _scheduler.start()
@@ -71,3 +99,7 @@ def stop_report_scheduler():
 
 def trigger_weekly_reports_now():
     _run_weekly_reports()
+
+
+def trigger_anomaly_detection_now():
+    _run_anomaly_detection()
