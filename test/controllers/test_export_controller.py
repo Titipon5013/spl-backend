@@ -153,18 +153,78 @@ def test_start_report_scheduler_registers_weekly_cron_job(monkeypatch):
 
     assert scheduler is fake_scheduler
     assert fake_scheduler.started is True
-    assert fake_scheduler.jobs == [
-        (
-            report_scheduler._run_weekly_reports,
-            {
-                "trigger": "cron",
-                "day_of_week": "fri",
-                "hour": 9,
-                "minute": 30,
-                "id": "weekly_parkpilot_report",
-                "replace_existing": True,
-            },
-        )
-    ]
+
+    jobs = dict(
+        (kwargs["id"], (func, kwargs)) for func, kwargs in fake_scheduler.jobs
+    )
+    assert jobs["weekly_parkpilot_report"] == (
+        report_scheduler._run_weekly_reports,
+        {
+            "trigger": "cron",
+            "day_of_week": "fri",
+            "hour": 9,
+            "minute": 30,
+            "id": "weekly_parkpilot_report",
+            "replace_existing": True,
+        },
+    )
 
     report_scheduler.stop_report_scheduler()
+
+
+def test_start_report_scheduler_registers_anomaly_detection_job(monkeypatch):
+    """Feature 2: ตัวตรวจจับความผิดปกติต้องถูกลงทะเบียนไว้กับ scheduler เดิม (URS-13)"""
+    from services import report_scheduler
+
+    class FakeScheduler:
+        def __init__(self):
+            self.jobs = []
+            self.started = False
+
+        def add_job(self, func, **kwargs):
+            self.jobs.append((func, kwargs))
+
+        def start(self):
+            self.started = True
+
+        def shutdown(self, wait=False):
+            self.started = False
+
+    fake_scheduler = FakeScheduler()
+    monkeypatch.setattr(report_scheduler, "_scheduler", None)
+    monkeypatch.setattr(report_scheduler, "BackgroundScheduler", lambda: fake_scheduler)
+    monkeypatch.setenv("ANOMALY_SCAN_INTERVAL_MINUTES", "7")
+
+    report_scheduler.start_report_scheduler()
+
+    jobs = dict(
+        (kwargs["id"], (func, kwargs)) for func, kwargs in fake_scheduler.jobs
+    )
+    assert jobs["parkpilot_anomaly_detection"] == (
+        report_scheduler._run_anomaly_detection,
+        {
+            "trigger": "interval",
+            "minutes": 7,
+            "id": "parkpilot_anomaly_detection",
+            "replace_existing": True,
+        },
+    )
+
+    report_scheduler.stop_report_scheduler()
+
+
+def test_anomaly_detection_job_survives_a_failing_scan(monkeypatch):
+    """ตัวตรวจจับพังต้องไม่ทำให้ scheduler ตายทั้งตัว"""
+    from services import report_scheduler
+
+    class ExplodingService:
+        def __init__(self, db):
+            pass
+
+        def detect_anomalies(self):
+            raise RuntimeError("database is down")
+
+    monkeypatch.setattr(report_scheduler, "AnomalyService", ExplodingService)
+
+    # ต้องไม่โยน exception ออกมา
+    report_scheduler.trigger_anomaly_detection_now()

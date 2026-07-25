@@ -146,6 +146,88 @@ class AnalyticsService:
             for event in events
         ]
 
+    def get_live_occupancy(self, lot_id: str) -> Optional[dict]:
+        """สถานะลานจอดล่าสุด (URS-08). คืนค่า None ถ้ายังไม่มีข้อมูลเข้ามาเลย"""
+        model = ParkingSnapshot if lot_id == "CAMT_01" else ParkingSnapshot2
+        latest = (
+            self.db.query(model)
+            .filter(model.lot_id == lot_id)
+            .order_by(model.timestamp.desc())
+            .first()
+        )
+        if not latest:
+            return None
+
+        return {
+            "lot_id": lot_id,
+            "total_spaces": latest.total_spaces,
+            "available_spaces": latest.available_spaces,
+            "occupied_spaces": latest.occupied_spaces,
+            # ชื่อคอลัมน์ในตารางสะกดตกตัว n (occupacy_rate) แต่เปิดออกไปข้างนอกให้ถูกต้อง
+            "occupancy_rate": round(latest.occupacy_rate, 2),
+            "confidence": latest.confidence,
+            "timestamp": latest.timestamp.isoformat(),
+            "data_age_seconds": int((datetime.utcnow() - latest.timestamp).total_seconds()),
+        }
+
+    def _latest_event_per_spot(self, lot_id: str) -> list[ParkingEventLog]:
+        """เหตุการณ์ล่าสุดของแต่ละช่องจอดในลานที่ระบุ
+
+        ใช้ max(id) ต่อ spot_id เพราะ id เพิ่มขึ้นตามลำดับการบันทึกเสมอ
+        จึงไม่กำกวมเหมือนใช้ max(timestamp) ที่อาจซ้ำกันได้
+        """
+        latest_ids = (
+            self.db.query(func.max(ParkingEventLog.id))
+            .filter(ParkingEventLog.lot_id == lot_id)
+            .group_by(ParkingEventLog.spot_id)
+            .scalar_subquery()
+        )
+        return (
+            self.db.query(ParkingEventLog)
+            .filter(ParkingEventLog.id.in_(latest_ids))
+            .order_by(ParkingEventLog.spot_id)
+            .all()
+        )
+
+    def check_slot_status(self, lot_id: str, spot_id: str) -> Optional[dict]:
+        """สถานะปัจจุบันของช่องจอดที่ระบุ (URS-09). คืนค่า None ถ้าไม่รู้จักช่องนี้"""
+        latest = (
+            self.db.query(ParkingEventLog)
+            .filter(
+                ParkingEventLog.lot_id == lot_id,
+                ParkingEventLog.spot_id == spot_id,
+            )
+            .order_by(ParkingEventLog.id.desc())
+            .first()
+        )
+        if not latest:
+            return None
+
+        return {
+            "lot_id": lot_id,
+            "spot_id": spot_id,
+            "state": "occupied" if latest.is_occupied else "free",
+            "since": latest.timestamp.isoformat(),
+            "duration_minutes": round(
+                (datetime.utcnow() - latest.timestamp).total_seconds() / 60, 1
+            ),
+        }
+
+    def find_available_slots(self, lot_id: str) -> dict:
+        """ช่องจอดที่ว่างอยู่ตอนนี้ (URS-12)"""
+        latest_events = self._latest_event_per_spot(lot_id)
+
+        available = [event.spot_id for event in latest_events if not event.is_occupied]
+        occupied = [event.spot_id for event in latest_events if event.is_occupied]
+
+        return {
+            "lot_id": lot_id,
+            "available_count": len(available),
+            "occupied_count": len(occupied),
+            "known_spots": len(latest_events),
+            "available_spots": available,
+        }
+
     def _calculate_avg_dwell_time(
         self, lot_id: str, start_date: datetime, end_date: datetime
     ) -> float:
