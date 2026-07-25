@@ -22,6 +22,9 @@ from routes.camera_event_controller import router as camera_event_router
 
 from services.report_scheduler import start_report_scheduler, stop_report_scheduler
 
+# 👇 Feature 2: MCP Server สำหรับให้ AI agent เรียกใช้ข้อมูลลานจอด
+from mcp_server.server import create_http_app, http_transport_enabled, mcp_lifespan
+
 from mqtt.client import mqttClient
 import os
 
@@ -35,7 +38,14 @@ mqtt_client = mqttClient()
 async def lifespan(app: FastAPI):
     mqtt_client.start_mqtt()
     start_report_scheduler()
-    yield
+
+    if http_transport_enabled():
+        # แอปที่ mount ไว้ไม่ได้รับ lifespan ของตัวเอง ต้องรัน session manager ที่นี่
+        async with mcp_lifespan():
+            yield
+    else:
+        yield
+
     stop_report_scheduler()
     mqtt_client.stop_mqtt()
 
@@ -72,3 +82,8 @@ app.include_router(report_router)
 
 # 👇 2. ลงทะเบียน Router ใหม่เข้าสู่แอปพลิเคชัน
 app.include_router(camera_event_router)
+
+# 👇 3. Feature 2: เปิด MCP server ผ่าน HTTP ที่ /mcp (ต้องมี bearer token)
+#    ส่วน Claude Desktop ให้ใช้ stdio ผ่าน `python -m mcp_server` แทน
+if http_transport_enabled():
+    app.mount("/mcp", create_http_app())

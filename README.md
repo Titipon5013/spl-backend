@@ -11,6 +11,7 @@ This is the backend for the Smart Parking Lot application, built with FastAPI. I
 - **Parking Space Management**: Full control over parking spaces, including tracking their history to monitor usage patterns over time.
 - **License Plate Management**: Functionality to add, view, and manage user license plates, linking them to specific user accounts.
 - **Database Migrations**: Utilizes Alembic to handle database schema migrations, making it easy to evolve the data model over time.
+- **MCP Server (Feature 2)**: Exposes live and historical parking data as Model Context Protocol tools for AI agents, over stdio (Claude Desktop) and HTTP at `/mcp`. Includes automatic detection of stuck slots, pipeline outages and offline devices. See [docs/feature2-mcp-server.md](docs/feature2-mcp-server.md).
 
 ## Technologies Used
 
@@ -33,6 +34,7 @@ The following are the primary API endpoints provided by the backend:
 - `/api/requests`: Allows administrators to manage user registration requests (approve or deny).
 - `/api/parking-spaces`: For managing parking spaces and their real-time status.
 - `/api/plates`: For managing user license plates.
+- `/mcp/`: The MCP server endpoint for AI agents. Requires a bearer token from `MCP_API_TOKENS`.
 
 ## Setup and Installation
 

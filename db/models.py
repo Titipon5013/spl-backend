@@ -121,3 +121,24 @@ class DeviceHealth(Base):
     device_type = Column(String(20))                         # "board", "camera_1", "camera_2"
     status = Column(String(20))                              # "online", "offline"
     last_seen = Column(DateTime, default=datetime.utcnow)
+
+
+class SystemAnomaly(Base):
+    """ความผิดปกติของระบบที่ตรวจพบอัตโนมัติ (URS-13, URS-14)
+
+    หนึ่งแถวคือความผิดปกติหนึ่งครั้ง ตัวตรวจจับจะไม่สร้างแถวใหม่
+    ถ้าความผิดปกติเดิมยังไม่ถูกแก้ (resolved_at เป็น NULL)
+    """
+    __tablename__ = "system_anomalies"
+
+    id = Column(Integer, primary_key=True, index=True)
+    anomaly_type = Column(String(30), index=True, nullable=False)  # stuck_slot, pipeline_inactive, device_offline
+    severity = Column(String(10), nullable=False)                  # warning, critical
+    lot_id = Column(String(50), index=True, nullable=True)
+    spot_id = Column(String(50), index=True, nullable=True)
+    device_id = Column(String(50), index=True, nullable=True)
+    details = Column(String(500), nullable=False)
+    detected_at = Column(DateTime, default=datetime.utcnow, index=True, nullable=False)
+    resolved_at = Column(DateTime, nullable=True)
+    reviewed_by = Column(String(255), nullable=True)                # อีเมลของแอดมินที่ตรวจสอบ
+    reviewed_at = Column(DateTime, nullable=True)
