@@ -16,30 +16,29 @@ from services.user_chatbot_service import ChatbotService
 
 router = APIRouter()
 
-channel_secret = os.getenv("LINE_CHANNEL_SECRET", "")
-channel_access_token = os.getenv("LINE_CHANNEL_ACCESS_TOKEN", "")
+user_channel_secret = os.getenv("USER_LINE_CHANNEL_SECRET", "")
+user_channel_access_token = os.getenv("USER_LINE_ACCESS_TOKEN", "")
 
-configuration = Configuration(access_token=channel_access_token)
-parser = WebhookParser(channel_secret)
+user_configuration = Configuration(access_token=user_channel_access_token)
+user_parser = WebhookParser(user_channel_secret)
 
-
-@router.post("/line")
-async def line_webhook(request: Request, db: Session = Depends(get_db)):
+@router.post("/line/user")
+async def user_line_webhook(request: Request, db: Session = Depends(get_db)):
     signature = request.headers.get("X-Line-Signature", "")
 
     body = await request.body()
     body_decode = body.decode("utf-8")
 
     try:
-        events = parser.parse(body_decode, signature)
+        events = user_parser.parse(body_decode, signature)
     except InvalidSignatureError:
-        print("Error: Invalid signature. Please check your LINE_CHANNEL_SECRET.")
+        print("Error: Invalid signature. Please check your USER_LINE_CHANNEL_SECRET.")
         raise HTTPException(status_code=400, detail="Invalid signature")
     except Exception as e:
         print(f"Error parsing webhook: {e}")
         raise HTTPException(status_code=500, detail="Internal Server Error")
 
-    with ApiClient(configuration) as api_client:
+    with ApiClient(user_configuration) as api_client:
         line_bot_api = MessagingApi(api_client)
         chatbot_service = ChatbotService(db)
 
@@ -49,17 +48,12 @@ async def line_webhook(request: Request, db: Session = Depends(get_db)):
 
             reply_message = None
 
-            # ---------------------------------------------------
-            # กรณี User ส่งข้อความธรรมดา หรือ กดปุ่ม Text จาก Rich Menu
-            # ---------------------------------------------------
             if isinstance(event.message, TextMessageContent):
                 user_msg = event.message.text
                 print(f"Received Text: {user_msg}")
 
-                # รับค่า Dictionary จาก ChatbotService
                 reply_data = chatbot_service.get_reply(user_msg)
 
-                # เช็คว่าบอทต้องการขอพิกัด (Quick Reply) หรือไม่
                 if reply_data["type"] == "quick_reply_location":
                     quick_reply = QuickReply(
                         items=[
@@ -73,24 +67,16 @@ async def line_webhook(request: Request, db: Session = Depends(get_db)):
                         quick_reply=quick_reply
                     )
                 else:
-                    # ตอบข้อความปกติ
                     reply_message = TextMessage(text=reply_data["text"])
 
-            # ---------------------------------------------------
-            # กรณี User ส่ง Location กลับมา (จากการกด Quick Reply)
-            # ---------------------------------------------------
             elif isinstance(event.message, LocationMessageContent):
                 lat = event.message.latitude
                 lng = event.message.longitude
                 print(f"Received Location: Lat={lat}, Lng={lng}")
 
-                # calculate_travel_eta รีเทิร์นมาเป็น string ปกติ
                 reply_text = chatbot_service.calculate_travel_eta(lat, lng)
                 reply_message = TextMessage(text=reply_text)
 
-            # ---------------------------------------------------
-            # ประกอบร่างและส่งข้อความกลับให้ User
-            # ---------------------------------------------------
             if reply_message:
                 try:
                     line_bot_api.reply_message(
