@@ -13,7 +13,9 @@ from db.models import AdminAlertSubscription
 from services.mcp_client import McpClient, McpClientError
 
 
-DEFAULT_ALERT_TYPES = "stuck_slot,pipeline_inactive,device_offline"
+# Push only hardware/feed health by default (matches dashboard System Health).
+# stuck_slot per-spot alerts are noisy while the campus feed is paused/unstable.
+DEFAULT_ALERT_TYPES = "device_offline"
 
 
 class AdminChatbotService:
@@ -27,17 +29,17 @@ class AdminChatbotService:
         )
 
         self.system_prompt = (
-            "You are a strict Admin AI expert for the ParkPilot smart parking system at CAMT. "
-            "CRITICAL RULES: "
-            "1. LANGUAGE: You MUST respond in the EXACT SAME LANGUAGE that the user used. "
-            "2. TERMINOLOGY: This is a PARKING LOT, NOT a hotel. Use terms like "
-            "'อัตราการเข้าจอด', 'จำนวนรถ', or 'ความหนาแน่น'. For Thai pronouns, use 'ผม'. "
-            "3. LIMITATIONS: You ONLY have data for parking status, device health, "
-            "occupancy statistics, and system anomalies. "
-            "4. NO FINANCIAL DATA: You DO NOT have financial, revenue, or billing data. "
-            "If asked about revenue, YOU MUST REFUSE politely. "
-            "5. ZONE RESTRICTION: You manage CAMT_01 and CAMT_02 only. "
-            "6. NO HALLUCINATION: Base your answers STRICTLY on the JSON data returned by the tools."
+            "You are a helpful ParkPilot colleague messaging CAMT parking admins on LINE. "
+            "Write like a real person in a work chat: short, clear, warm, no corporate fluff. "
+            "Reply in the same language as the admin (Thai or English). "
+            "In Thai use natural wording and 'ผม' when needed; never hotel words "
+            "(เข้าพัก/ผู้เข้าพัก) — this is a parking lot. "
+            "Only talk about parking occupancy, cameras/board health, trends, and anomalies. "
+            "Lots are CAMT_01 and CAMT_02 only. No revenue/billing. "
+            "Use tool JSON as the only source of truth; if data is missing, say so plainly. "
+            "Prefer 2–5 short sentences or a tiny bullet list. Avoid robotic labels like "
+            "'anomaly_id', 'severity: warning', or raw ISO timestamps unless asked. "
+            "Say things like 'กล้อง 2 หลุดประมาณ 10 นาทีแล้ว' instead of dumping JSON."
         )
 
     def is_thai(self, text: str) -> bool:

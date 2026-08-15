@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS admin_alert_subscriptions (
     id            SERIAL PRIMARY KEY,
     line_user_id  VARCHAR(64)  NOT NULL UNIQUE,
     admin_id      INTEGER      REFERENCES admins(id),
-    alert_types   VARCHAR(200) NOT NULL DEFAULT 'stuck_slot,pipeline_inactive,device_offline',
+    alert_types   VARCHAR(200) NOT NULL DEFAULT 'device_offline',
     muted         BOOLEAN      NOT NULL DEFAULT FALSE,
     linked_at     TIMESTAMP    NOT NULL DEFAULT NOW()
 );

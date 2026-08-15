@@ -47,6 +47,18 @@ LINE checklist) is in [windows-local-test-guide.md](windows-local-test-guide.md)
 
 Unlinked users cannot query MCP; they receive link instructions instead.
 
+## Alert policy (current)
+
+While campus services may be paused / noisy, LINE **pushes only `device_offline`**
+by default (board / cameras — same idea as dashboard System Health).
+
+- Per-spot `stuck_slot` alerts are **not** pushed by default (too frequent).
+- Override with `ADMIN_PUSH_ALERT_TYPES` in `.env`, e.g.
+  `device_offline,pipeline_inactive`.
+- Old subscriptions that still list all anomaly types are treated as the new default.
+
+Chat replies are worded like a colleague on LINE (short, natural), not raw JSON dumps.
+
 ## Data flow
 
 1. Linked admin texts a question → `AdminChatbotService` → `McpClient.call_tool`

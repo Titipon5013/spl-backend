@@ -11,7 +11,7 @@ from services.mcp_client import McpClientError
 def _link(db, line_user_id="Uadmin1"):
     sub = AdminAlertSubscription(
         line_user_id=line_user_id,
-        alert_types="stuck_slot,pipeline_inactive,device_offline",
+        alert_types="device_offline",
         muted=False,
         linked_at=datetime.utcnow(),
     )

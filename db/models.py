@@ -155,11 +155,11 @@ class AdminAlertSubscription(Base):
     id = Column(Integer, primary_key=True, index=True)
     line_user_id = Column(String(64), unique=True, index=True, nullable=False)
     admin_id = Column(Integer, ForeignKey("admins.id"), nullable=True)
-    # CSV of anomaly types; empty/default means all known types
+    # CSV of anomaly types; default = hardware only (dashboard System Health style)
     alert_types = Column(
         String(200),
         nullable=False,
-        default="stuck_slot,pipeline_inactive,device_offline",
+        default="device_offline",
     )
     muted = Column(Boolean, nullable=False, default=False)
     linked_at = Column(DateTime, default=datetime.utcnow, nullable=False)
