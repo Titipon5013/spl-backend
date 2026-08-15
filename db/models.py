@@ -1,4 +1,4 @@
-from sqlalchemy import Integer, String, Column, Enum, DateTime, func, ForeignKey, Float, Boolean
+from sqlalchemy import Integer, String, Column, Enum, DateTime, func, ForeignKey, Float, Boolean, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, relationship, Mapped, mapped_column
 from enums import RoleEnum, RequestStatus, ApprovalStatus, AuthProvider
 from datetime import datetime
@@ -142,3 +142,37 @@ class SystemAnomaly(Base):
     resolved_at = Column(DateTime, nullable=True)
     reviewed_by = Column(String(255), nullable=True)                # อีเมลของแอดมินที่ตรวจสอบ
     reviewed_at = Column(DateTime, nullable=True)
+
+
+class AdminAlertSubscription(Base):
+    """Feature 4: linked admin LINE identity + push preferences (UC-10 / UC-11).
+
+    One row per LINE user. Linking happens via /link <secret> on the admin bot.
+    muted=True stops push alerts but still allows conversational queries.
+    """
+    __tablename__ = "admin_alert_subscriptions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    line_user_id = Column(String(64), unique=True, index=True, nullable=False)
+    admin_id = Column(Integer, ForeignKey("admins.id"), nullable=True)
+    # CSV of anomaly types; empty/default means all known types
+    alert_types = Column(
+        String(200),
+        nullable=False,
+        default="stuck_slot,pipeline_inactive,device_offline",
+    )
+    muted = Column(Boolean, nullable=False, default=False)
+    linked_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class AdminAlertDelivery(Base):
+    """Feature 4: dedupe log so each anomaly is pushed at most once per LINE user."""
+    __tablename__ = "admin_alert_deliveries"
+    __table_args__ = (
+        UniqueConstraint("anomaly_id", "line_user_id", name="uq_admin_alert_delivery"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    anomaly_id = Column(Integer, ForeignKey("system_anomalies.id"), nullable=False, index=True)
+    line_user_id = Column(String(64), nullable=False, index=True)
+    sent_at = Column(DateTime, default=datetime.utcnow, nullable=False)

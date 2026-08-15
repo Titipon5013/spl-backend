@@ -41,7 +41,7 @@ def _run_weekly_reports():
 
 
 def _run_anomaly_detection():
-    """ตรวจจับความผิดปกติของระบบตามรอบ (URS-13)"""
+    """ตรวจจับความผิดปกติของระบบตามรอบ (URS-13) แล้วแจ้งเตือนแอดมิน (UC-10)"""
     db = Session()
     try:
         result = AnomalyService(db).detect_anomalies()
@@ -50,6 +50,15 @@ def _run_anomaly_detection():
                 f"[anomaly-detector] new={result['new_anomalies']} "
                 f"resolved={result['resolved_anomalies']} "
                 f"open={result['open_anomalies']}"
+            )
+        from services.admin_notification_service import AdminNotificationService
+
+        notify = AdminNotificationService(db).dispatch_new_anomaly_alerts()
+        if notify["pushed"] or notify["failures"]:
+            print(
+                f"[admin-notify] pushed={notify['pushed']} "
+                f"failures={notify['failures']} "
+                f"dup={notify['skipped_dup']}"
             )
     except Exception as e:
         # ตัวตรวจจับพังต้องไม่ทำให้ scheduler ตายทั้งตัว

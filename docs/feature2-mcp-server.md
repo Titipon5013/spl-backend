@@ -129,11 +129,16 @@ tests cover the same path an AI agent takes, including the JSON error responses.
 
 ## Notes for Feature 4
 
+Feature 4 is implemented in this repo. The admin LINE bot consumes Feature 2
+through [`services/mcp_client.py`](../services/mcp_client.py) — see
+[feature4-admin-line.md](feature4-admin-line.md) for setup.
+
 - Connect over HTTP at `/mcp/` with a bearer token from `MCP_API_TOKENS`. Do not
   import the tool functions directly — going through MCP is what the proposal
   specifies and it keeps the rate limiting in effect.
-- Rate limit quota is per token, so issue the LINE bot its own token.
-- Poll `system_anomalies` (or call `get_system_anomalies`) for alert-worthy
-  events; dedupe is already handled by the detector.
-- Feature 2 is LLM-agnostic. The Gemini-vs-Claude decision only affects
-  Feature 4.
+- Rate limit quota is per token, so issue the LINE bot its own token
+  (`MCP_LINE_BOT_TOKEN`, also listed in `MCP_API_TOKENS`).
+- After each anomaly scan, `AdminNotificationService` pushes undelivered open
+  anomalies to unmuted linked admins; delivery rows prevent duplicates.
+- Feature 2 is LLM-agnostic. The OpenRouter/Llama choice only affects Feature 4
+  (and Feature 6) conversational orchestration.
