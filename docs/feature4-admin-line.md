@@ -33,6 +33,9 @@ when `AnomalyService` opens a new anomaly.
 3. Point the admin LINE Official Account webhook to
    `https://<host>/webhook/line/admin`.
 
+**Windows teammates:** step-by-step local setup (venv, Postgres, ngrok, MCP curl,
+LINE checklist) is in [windows-local-test-guide.md](windows-local-test-guide.md).
+
 ## Admin commands
 
 | Command | Effect |

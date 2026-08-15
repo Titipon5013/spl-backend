@@ -13,6 +13,7 @@ This is the backend for the Smart Parking Lot application, built with FastAPI. I
 - **Database Migrations**: Utilizes Alembic to handle database schema migrations, making it easy to evolve the data model over time.
 - **MCP Server (Feature 2)**: Exposes live and historical parking data as Model Context Protocol tools for AI agents, over stdio (Claude Desktop) and HTTP at `/mcp`. Includes automatic detection of stuck slots, pipeline outages and offline devices. See [docs/feature2-mcp-server.md](docs/feature2-mcp-server.md).
 - **Admin LINE Bot (Feature 4)**: Separate admin LINE channel for linked operators. Queries go through the Feature 2 MCP client; anomaly pushes use subscription + delivery dedupe. See [docs/feature4-admin-line.md](docs/feature4-admin-line.md).
+- **Windows local testing**: [docs/windows-local-test-guide.md](docs/windows-local-test-guide.md) — pull `dev`, run MCP + admin LINE with ngrok.
 
 ## Technologies Used
 
