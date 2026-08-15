@@ -13,21 +13,17 @@ from routes.admin_controller import router as user_router
 from routes.entry_record_controller import router as entry_record_router
 from routes.analytics_controller import router as analytics_router
 from routes.webhook_controller import router as webhook_router
+# 👇 1. เพิ่มการ Import admin_webhook_controller
+from routes.admin_webhook_controller import router as admin_webhook_router
 from routes.oauth_controller import router as oauth_router
 from routes.admin_access_controller import router as admin_access_router
 from routes.report_controller import router as report_router
 
-# 👇 1. เพิ่มการ Import camera_event_controller จากโฟลเดอร์ routes
 from routes.camera_event_controller import router as camera_event_router
-
 from services.report_scheduler import start_report_scheduler, stop_report_scheduler
-
-# 👇 Feature 2: MCP Server สำหรับให้ AI agent เรียกใช้ข้อมูลลานจอด
 from mcp_server.server import create_http_app, http_transport_enabled, mcp_lifespan
-
 from mqtt.client import mqttClient
 import os
-
 
 BROKER_HOST = os.getenv("MQTT_BROKER_HOST", default="localhost")
 MQTT_USER = os.getenv("MQTT_USER")
@@ -48,7 +44,6 @@ async def lifespan(app: FastAPI):
 
     stop_report_scheduler()
     mqtt_client.stop_mqtt()
-
 
 app = FastAPI(lifespan=lifespan)
 
@@ -76,14 +71,13 @@ app.include_router(plate_router)
 app.include_router(entry_record_router)
 app.include_router(analytics_router, prefix="/api/analytics", tags=["Analytics Dashboard"])
 app.include_router(webhook_router, prefix="/webhook", tags=["LINE Chatbot"])
+# 👇 2. ลงทะเบียน Router ของ Admin Webhook เข้าสู่แอปพลิเคชัน
+app.include_router(admin_webhook_router, prefix="/webhook", tags=["Admin LINE Chatbot"])
 app.include_router(oauth_router)
 app.include_router(admin_access_router)
 app.include_router(report_router)
 
-# 👇 2. ลงทะเบียน Router ใหม่เข้าสู่แอปพลิเคชัน
 app.include_router(camera_event_router)
 
-# 👇 3. Feature 2: เปิด MCP server ผ่าน HTTP ที่ /mcp (ต้องมี bearer token)
-#    ส่วน Claude Desktop ให้ใช้ stdio ผ่าน `python -m mcp_server` แทน
 if http_transport_enabled():
     app.mount("/mcp", create_http_app())
