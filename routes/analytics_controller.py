@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 from db.session import get_db
 from services.analytics_service import AnalyticsService
-from schemas.analytics import HeatmapResponse, TrendResponse, SystemHealthResponse
+from schemas.analytics import HeatmapResponse, TrendResponse, SystemHealthResponse, CameraSnapshotPayload
 from datetime import datetime, timedelta
 from typing import Optional
 from db.models import ParkingSnapshot, ParkingSnapshot2, ParkingEventLog
@@ -82,12 +82,14 @@ def get_current_status(
             detail="No real-time data available. Waiting for AI Worker ingestion."
         )
 
-    # 2. ดึงสถานะรายช่องล่าสุด (เพื่อไปวาดกล่องเขียว/แดงบนหน้าเว็บ)
-    # limit ตามจำนวนช่องในลานจอด (เช่น 30 หรือ 29)
+    # 2. กำหนดจำนวนช่องตามลานจอด (CAMT_02 มีพิกัดจริง 34 ช่อง)
+    limit_spots = 34 if lot_id == "CAMT_02" else latest.total_spaces
+
+    # 3. ดึงสถานะรายช่องล่าสุด (เพื่อไปวาดกล่องเขียว/แดงบนหน้าเว็บ)
     latest_events = db.query(ParkingEventLog)\
         .filter(ParkingEventLog.lot_id == lot_id)\
         .order_by(desc(ParkingEventLog.timestamp))\
-        .limit(latest.total_spaces)\
+        .limit(limit_spots)\
         .all()
 
     return {
@@ -95,7 +97,7 @@ def get_current_status(
         "available_spaces": latest.available_spaces,
         "total_spaces": latest.total_spaces,
         "occupied_spaces": latest.occupied_spaces,
-        "occupancy_rate": latest.occupacy_rate, # 👈 ระวังชื่อนี้ใน frontend ต้องแมตช์ด้วยนะครับ (คุณสะกดใน model เป็น occupacy_rate)
+        "occupancy_rate": latest.occupacy_rate, # ระวังชื่อนี้ใน frontend ต้องสะกด occupacy_rate ตาม DB
         "last_update": latest.timestamp,
         "spots": [{"spot_id": e.spot_id, "is_occupied": e.is_occupied} for e in latest_events]
     }
@@ -110,3 +112,21 @@ def get_system_health(
     """
     service = AnalyticsService(db)
     return service.get_system_health_status(lot_id)
+
+
+@router.post("/sync")
+def sync_parking_data(
+        payload: CameraSnapshotPayload,
+        db: Session = Depends(get_db)
+):
+    """
+    รับค่าภาพรวมจาก Orange Pi -> บันทึกลง Snapshot -> กระจายยอด 34 ช่องลง EventLog
+    """
+    service = AnalyticsService(db)
+
+    # เรียกใช้ฟังก์ชันกระจายยอดที่เราคุยกัน (ต้องไปเขียนเพิ่มใน analytics_service.py)
+    try:
+        result = service.process_orange_pi_snapshot(payload)
+        return {"status": "success", "detail": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
