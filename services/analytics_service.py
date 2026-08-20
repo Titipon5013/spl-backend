@@ -8,7 +8,7 @@ from schemas.analytics import (
     TrendDataPoint,
     SystemHealthResponse,
     DeviceStatus,
-    CameraEventPayload,
+    CameraSnapshotPayload,
     DeviceHeartbeatPayload
 )
 from datetime import datetime, timedelta
@@ -259,37 +259,62 @@ class AnalyticsService:
     # ========================================================
     # [2] Hardware Ingestion (รับข้อมูลจาก Orange Pi)
     # ========================================================
-    def process_camera_events(self, payload: CameraEventPayload) -> str:
-        # 1. วนลูปบันทึกประวัติ (Event Log) ทีละช่อง
-        for event in payload.events:
-            new_log = ParkingEventLog(
-                lot_id=payload.lot_id,
-                spot_id=event.spot_id,
-                is_occupied=(event.status.lower() == 'occupied'),
-                timestamp=datetime.utcnow()
-            )
-            self.db.add(new_log)
+    def process_orange_pi_snapshot(self, payload: CameraSnapshotPayload) -> str:
+        current_time = datetime.utcnow()
 
-        # 2. อัปเดตตาราง Snapshot ปัจจุบัน (เพื่อให้ Chatbot มีข้อมูลตอบ)
+        # 1. อัปเดตตาราง Snapshot ปัจจุบัน
         model = ParkingSnapshot if payload.lot_id == "CAMT_01" else ParkingSnapshot2
-        occupancy_rate = (payload.occupied_spaces / payload.total_spaces * 100) if payload.total_spaces > 0 else 0.0
-
         new_snapshot = model(
             lot_id=payload.lot_id,
             total_spaces=payload.total_spaces,
             available_spaces=payload.available_spaces,
             occupied_spaces=payload.occupied_spaces,
-            occupacy_rate=occupancy_rate,
+            occupacy_rate=payload.occupacy_rate,
             confidence=payload.confidence,
             processing_time_seconds=payload.processing_time_seconds,
-            timestamp=datetime.utcnow()
+            timestamp=current_time
         )
         self.db.add(new_snapshot)
 
-        # บันทึกทั้ง 2 ตารางลง Database ใน Transaction เดียวเลย
+        # 2. ลอจิกกระจายยอดลง 34 ช่อง (Backend Translator)
+        if payload.lot_id == "CAMT_02":
+            actual_spots = [
+                "A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "A10", "A11", "A12", "A13",
+                "B1", "B2", "B3", "B4", "B5", "B6",
+                "C1", "C2", "C3", "C4", "C5", "C6", "C7", "C8", "C9", "C10", "C11", "C12", "C13", "C14", "C15"
+            ]
+        else:
+            # สำรองไว้กรณีส่ง CAMT_01 เข้ามา (จำลองช่องตาม total_spaces)
+            actual_spots = [f"Spot_{str(i).zfill(2)}" for i in range(1, payload.total_spaces + 1)]
+
+        new_events = []
+        for index, spot in enumerate(actual_spots):
+            # เรียงคิวจอด: ถ้าจำนวนรถจอด 20 คัน index 0-19 จะเป็น True (มีรถ) นอกนั้น False
+            is_occupied = True if index < payload.occupied_spaces else False
+            new_events.append(
+                ParkingEventLog(
+                    lot_id=payload.lot_id,
+                    spot_id=spot,
+                    is_occupied=is_occupied,
+                    timestamp=current_time
+                )
+            )
+        # ใช้ bulk_save เพื่อให้เซฟ 34 แถวในเสี้ยววินาที ไม่กินเครื่อง
+        self.db.bulk_save_objects(new_events)
+
+        # 3. อัปเดต Device Health ควบคู่ไปด้วย (บอกว่าบอร์ดส่งข้อมูลมาแล้ว แปลว่าออนไลน์อยู่)
+        device = self.db.query(DeviceHealth).filter(DeviceHealth.device_id == "orange_pi_main").first()
+        if not device:
+            device = DeviceHealth(device_id="orange_pi_main", device_type="board", status="online", last_seen=current_time)
+            self.db.add(device)
+        else:
+            device.status = "online"
+            device.last_seen = current_time
+
+        # กดเซฟทุกอย่างลง DB พร้อมกัน
         self.db.commit()
 
-        return f"Processed {len(payload.events)} events and updated snapshot for {payload.lot_id}"
+        return f"Processed snapshot for {payload.lot_id}, distributed to {len(actual_spots)} spots, and updated board health."
 
     # ========================================================
     # [3] System Health Monitoring (เช็คสถานะอุปกรณ์)
