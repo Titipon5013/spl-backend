@@ -52,11 +52,11 @@ class SpotEvent(BaseModel):
     spot_id: str
     status: str
 
-class CameraEventPayload(BaseModel):
+class CameraSnapshotPayload(BaseModel):
     lot_id: str
     total_spaces: int
     available_spaces: int
     occupied_spaces: int
+    occupacy_rate: float
     confidence: float = 1.0
     processing_time_seconds: float = 0.0
-    events: List[SpotEvent]
