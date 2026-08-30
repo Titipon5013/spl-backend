@@ -131,6 +131,23 @@ def test_rate_limit_blocks_calls_over_the_threshold(monkeypatch):
         security.check_rate_limit("client-over")
 
 
+def test_rate_limit_window_resets_after_sixty_seconds(monkeypatch):
+    # TC-12-2: คำขอถัดไปต้องสำเร็จหลังหน้าต่าง 60 วินาทีหมดอายุ
+    monkeypatch.setattr(security, "RATE_LIMIT_PER_MINUTE", 2)
+
+    fake_now = {"t": 1000.0}
+    monkeypatch.setattr(security.time, "monotonic", lambda: fake_now["t"])
+
+    for _ in range(2):
+        security.check_rate_limit("client-reset")
+
+    with pytest.raises(ToolError, match="Rate limit exceeded"):
+        security.check_rate_limit("client-reset")
+
+    fake_now["t"] += 61.0
+    security.check_rate_limit("client-reset")  # ต้องไม่ raise หลัง window reset
+
+
 def test_rate_limit_quota_is_per_client(monkeypatch):
     monkeypatch.setattr(security, "RATE_LIMIT_PER_MINUTE", 2)
 

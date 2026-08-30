@@ -1,7 +1,13 @@
 from datetime import datetime, timedelta
 
 import pytest
-from db.models import DeviceHealth, EntryRecord, ParkingEventLog, ParkingSnapshot
+from db.models import (
+    DeviceHealth,
+    EntryRecord,
+    ParkingEventLog,
+    ParkingSnapshot,
+    ParkingSnapshot2,
+)
 
 
 def test_get_current_status(client, db_session):
@@ -177,7 +183,7 @@ def test_system_health_uptime(client, db_session):
 
 def test_heartbeat_updates_four_camera_streams(client, db_session):
     response = client.post(
-        "/api/analytics/heartbeat",
+        "/api/heartbeat",
         json={
             "board_id": "orange_pi_main",
             "board_status": "online",
@@ -202,7 +208,7 @@ def test_heartbeat_updates_four_camera_streams(client, db_session):
 
 def test_camera_event_ingestion_appends_logs_and_snapshot(client, db_session):
     response = client.post(
-        "/api/analytics/camera/events",
+        "/api/camera/events",
         json={
             "lot_id": "CAMT_01",
             "total_spaces": 30,
@@ -217,8 +223,82 @@ def test_camera_event_ingestion_appends_logs_and_snapshot(client, db_session):
         },
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 201
     assert db_session.query(ParkingEventLog).count() == 2
     snapshot = db_session.query(ParkingSnapshot).first()
     assert snapshot.occupied_spaces == 12
     assert snapshot.confidence == 0.95
+
+
+def test_sync_snapshot_distributes_occupancy_to_camt02_slots(client, db_session):
+    # TC: POST /api/analytics/sync — กระจายยอด 34 ช่องตามพิกัดจริงของ CAMT_02
+    response = client.post(
+        "/api/analytics/sync",
+        json={
+            "lot_id": "CAMT_02",
+            "total_spaces": 34,
+            "available_spaces": 14,
+            "occupied_spaces": 20,
+            "occupacy_rate": 58.82,
+            "confidence": 0.97,
+            "processing_time_seconds": 0.12,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "success"
+
+    snapshot = db_session.query(ParkingSnapshot2).first()
+    assert snapshot is not None
+    assert snapshot.occupied_spaces == 20
+    assert snapshot.available_spaces == 14
+    assert snapshot.occupacy_rate == pytest.approx(58.82)
+
+    events = (
+        db_session.query(ParkingEventLog)
+        .filter(ParkingEventLog.lot_id == "CAMT_02")
+        .all()
+    )
+    assert len(events) == 34
+    occupied = [e for e in events if e.is_occupied]
+    assert len(occupied) == 20
+    occupied_ids = {e.spot_id for e in occupied}
+    assert "A1" in occupied_ids
+    assert "A13" in occupied_ids
+    assert "C15" not in occupied_ids
+
+
+def test_sync_snapshot_marks_board_online(client, db_session):
+    # TC: /sync ต้องอัปเดต DeviceHealth ของ orange_pi_main เป็น online
+    response = client.post(
+        "/api/analytics/sync",
+        json={
+            "lot_id": "CAMT_01",
+            "total_spaces": 30,
+            "available_spaces": 18,
+            "occupied_spaces": 12,
+            "occupacy_rate": 40.0,
+        },
+    )
+
+    assert response.status_code == 200
+
+    board = (
+        db_session.query(DeviceHealth)
+        .filter(DeviceHealth.device_id == "orange_pi_main")
+        .first()
+    )
+    assert board is not None
+    assert board.status == "online"
+    assert board.last_seen is not None
+
+    # CAMT_01 จำลองช่องเป็น Spot_01..N ตาม total_spaces
+    events = (
+        db_session.query(ParkingEventLog)
+        .filter(ParkingEventLog.lot_id == "CAMT_01")
+        .all()
+    )
+    assert len(events) == 30
+    assert {e.spot_id for e in events if e.is_occupied} == {
+        f"Spot_{str(i).zfill(2)}" for i in range(1, 13)
+    }
