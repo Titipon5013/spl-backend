@@ -40,7 +40,7 @@ class AdminChatbotService:
             "never hotel words like เข้าพัก, ผู้เข้าพัก, อัตราการเข้าพัก "
             "(those appear when models mistranslate 'occupancy'). "
             "Talk only about occupancy, camera/board health, trends, and anomalies. "
-            "Lots: CAMT_01 and CAMT_02 only. No revenue or billing. "
+            "There is logically ONLY ONE main parking lot. Always assume the user means 'CAMT_01' as the default lot_id. Treat it as a single location. No revenue or billing. "
             "Use tool JSON as the only source of truth; if data is missing, say so plainly. "
             "Prefer 2–5 short lines or a tiny bullet list. "
             "Don't dump robotic labels (anomaly_id, severity: warning, raw ISO times) "
@@ -236,10 +236,10 @@ class AdminChatbotService:
         # Drop empty optional fields so MCP schema defaults apply
         return {k: v for k, v in args.items() if v is not None and v != ""}
 
-    def _execute_tool(self, function_name: str, arguments: dict) -> str:
+    async def _execute_tool(self, function_name: str, arguments: dict) -> str:
         try:
             prepared = self._prepare_arguments(function_name, arguments)
-            result = self.mcp.call_tool(function_name, prepared)
+            result = await self.mcp.call_tool(function_name, prepared)
             return json.dumps(result, ensure_ascii=False)
         except McpClientError as exc:
             return json.dumps({"error": str(exc)})
@@ -257,7 +257,7 @@ class AdminChatbotService:
             )
         return {"type": "text", "text": text}
 
-    def get_reply(self, admin_id: str, user_message: str) -> dict:
+    async def get_reply(self, admin_id: str, user_message: str) -> dict:
         print(f"[Admin] Processing message: {user_message} from {admin_id}")
         lang = "th" if self.is_thai(user_message) else "en"
 
@@ -319,7 +319,9 @@ class AdminChatbotService:
                     print(
                         f"[Admin] LLM Called Tool: {function_name} | Args: {arguments}"
                     )
-                    raw_data = self._execute_tool(function_name, arguments)
+                    raw_data = await self._execute_tool(function_name, arguments)
+
+                    print(f"🎯 DEBUG Tool Result: {raw_data}")
 
                     messages_history.append(
                         {

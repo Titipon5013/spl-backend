@@ -144,7 +144,7 @@ async def admin_line_webhook(request: Request, db: Session = Depends(get_db)):
                     if command_reply is not None:
                         reply_message = TextMessage(text=command_reply)
                     else:
-                        reply_data = admin_chatbot_service.get_reply(
+                        reply_data = await admin_chatbot_service.get_reply(
                             admin_id=admin_id, user_message=admin_msg
                         )
                         reply_message = TextMessage(
