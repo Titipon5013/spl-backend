@@ -1,8 +1,10 @@
 """Feature 4 admin webhook commands — /link /mute /unmute /settings."""
 
 from datetime import datetime
+from unittest.mock import MagicMock, patch
 
 import pytest
+from linebot.v3.exceptions import InvalidSignatureError
 
 from db.models import AdminAlertSubscription
 from routes.admin_webhook_controller import handle_admin_command
@@ -61,6 +63,22 @@ def test_commands_require_link_first(db_session, link_secret):
 
 def test_non_command_returns_none(db_session, link_secret):
     assert handle_admin_command(db_session, "U1", "how full is CAMT_01?") is None
+
+
+def test_admin_webhook_rejects_invalid_signature(client):
+    """SRS-44: admin webhook must reject invalid LINE signatures."""
+    parser = MagicMock()
+    parser.parse.side_effect = InvalidSignatureError("forged")
+
+    with patch("routes.admin_webhook_controller.admin_parser", parser):
+        response = client.post(
+            "/webhook/line/admin",
+            headers={"X-Line-Signature": "forged"},
+            content=b"{}",
+        )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Invalid signature"
 
 
 def test_anomaly_job_invokes_notification_dispatch(monkeypatch, db_session):

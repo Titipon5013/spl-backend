@@ -1,4 +1,4 @@
-"""Feature 2 MCP tool tests (URS-08 to URS-15).
+"""Feature 2 MCP tool behavior tests for restored URS-08–URS-14.
 
 Tools are invoked through the FastMCP dispatcher rather than by calling the
 Python functions directly, so these tests also cover schema validation and the
@@ -65,7 +65,7 @@ def _event(db, spot_id, is_occupied, minutes_ago=0, lot_id="CAMT_01"):
     db.commit()
 
 
-# ---------- URS-15 tool surface ----------
+# ---------- Registered Feature 2 tool surface ----------
 
 def test_all_feature_two_tools_are_registered():
     tools = {tool.name for tool in asyncio.run(mcp.list_tools())}
@@ -127,7 +127,7 @@ def test_check_slot_status_errors_for_unknown_slot(db_session):
         call("check_slot_status", spot_id="ZZ9")
 
 
-# ---------- URS-12 ----------
+# ---------- URS-10 ----------
 
 def test_find_available_slots_lists_free_spots(db_session):
     _event(db_session, "A1", True)
@@ -139,7 +139,7 @@ def test_find_available_slots_lists_free_spots(db_session):
     assert result["available_count"] == 1
 
 
-# ---------- URS-10 / URS-11 ----------
+# ---------- URS-11 ----------
 
 def test_analyze_occupancy_trends_defaults_to_last_seven_days(db_session):
     _snapshot(db_session)

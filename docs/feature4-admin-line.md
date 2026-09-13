@@ -28,6 +28,7 @@ when `AnomalyService` opens a new anomaly.
    | `MCP_LINE_BOT_TOKEN` | Bearer token the bot uses at `/mcp` |
    | `MCP_API_TOKENS` | Must include `MCP_LINE_BOT_TOKEN` |
    | `MCP_INTERNAL_URL` | Default `http://127.0.0.1:8000/mcp/` |
+   | `MCP_INTERNAL_MODE` | `http` by default; use `inprocess` only for isolated local/unit-test execution |
    | `CLOUD_API_KEY` / `AGENT_ENDPOINT` | LLM used for tool orchestration |
 
 3. Point the admin LINE Official Account webhook to
@@ -62,6 +63,7 @@ Chat replies are worded like a colleague on LINE (short, natural), not raw JSON 
 ## Data flow
 
 1. Linked admin texts a question → `AdminChatbotService` → `McpClient.call_tool`
-   → Feature 2 tools over HTTP (or `MCP_INTERNAL_MODE=inprocess` in tests).
+   → Feature 2 tools over authenticated streamable HTTP. Set
+   `MCP_INTERNAL_MODE=inprocess` only for isolated unit tests.
 2. Scheduler runs `detect_anomalies` → `AdminNotificationService.dispatch_new_anomaly_alerts`
    → LINE push to unmuted subscribers → `admin_alert_deliveries` dedupes.

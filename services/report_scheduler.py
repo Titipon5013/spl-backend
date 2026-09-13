@@ -41,7 +41,7 @@ def _run_weekly_reports():
 
 
 def _run_anomaly_detection():
-    """ตรวจจับความผิดปกติของระบบตามรอบ (URS-13) แล้วแจ้งเตือนแอดมิน (UC-10)"""
+    """ตรวจจับความผิดปกติ (URS-13) แล้วแจ้งเตือนแอดมิน (URS-26 / SRS-48–SRS-49)"""
     db = Session()
     try:
         result = AnomalyService(db).detect_anomalies()

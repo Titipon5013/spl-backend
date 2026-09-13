@@ -89,12 +89,12 @@ that authentication and routing work.
 | URS-07 | Client authentication | *(transport layer)* | `mcp_server/security.py`, `mcp_server/server.py` |
 | URS-08 | Live occupancy retrieval | `get_live_occupancy` | `AnalyticsService.get_live_occupancy` |
 | URS-09 | Specific slot status checking | `check_slot_status` | `AnalyticsService.check_slot_status` |
-| URS-10 | Historical trends analysis | `analyze_occupancy_trends` | `AnalyticsService.get_occupancy_trends` |
-| URS-11 | Vehicle dwell times retrieval | `get_dwell_time_stats` | `AnalyticsService.get_kpis` |
-| URS-12 | Available slots discovery | `find_available_slots` | `AnalyticsService.find_available_slots` |
-| URS-13 | System anomalies retrieval | `get_system_anomalies`, `get_system_health` | `AnomalyService.get_anomalies` |
+| URS-10 | Available slots discovery | `find_available_slots` | `AnalyticsService.find_available_slots` |
+| URS-11 | Historical trends analysis | `analyze_occupancy_trends` | `AnalyticsService.get_occupancy_trends` |
+| URS-12 | Vehicle dwell times retrieval | `get_dwell_time_stats` | `AnalyticsService.get_kpis` |
+| URS-13 | Flagged system anomalies retrieval | `get_system_anomalies`, `get_system_health` | `AnomalyService.get_anomalies` |
 | URS-14 | Anomaly review marking | `mark_anomaly_reviewed` | `AnomalyService.mark_anomaly_reviewed` |
-| URS-15 | Schema and error enforcement | *(all tools)* | Typed signatures + `ToolError` |
+
 
 ## Anomaly detection
 

@@ -140,3 +140,44 @@ def test_delivery_dedupe_prevents_second_push(db_session):
         .count()
         == 1
     )
+
+
+def test_failed_push_is_not_recorded_and_retries_next_run(db_session):
+    _sub(db_session, "Uretry")
+    anomaly = _anomaly(db_session)
+    attempts = []
+
+    def push(uid, _text):
+        attempts.append(uid)
+        if len(attempts) == 1:
+            raise RuntimeError("temporary LINE failure")
+
+    service = AdminNotificationService(db_session, push_fn=push)
+    first = service.dispatch_new_anomaly_alerts()
+
+    assert first["pushed"] == 0
+    assert first["failures"] == 1
+    assert (
+        db_session.query(AdminAlertDelivery)
+        .filter(
+            AdminAlertDelivery.anomaly_id == anomaly.id,
+            AdminAlertDelivery.line_user_id == "Uretry",
+        )
+        .count()
+        == 0
+    )
+
+    second = service.dispatch_new_anomaly_alerts()
+
+    assert second["pushed"] == 1
+    assert second["failures"] == 0
+    assert attempts == ["Uretry", "Uretry"]
+    assert (
+        db_session.query(AdminAlertDelivery)
+        .filter(
+            AdminAlertDelivery.anomaly_id == anomaly.id,
+            AdminAlertDelivery.line_user_id == "Uretry",
+        )
+        .count()
+        == 1
+    )

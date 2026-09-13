@@ -1,4 +1,4 @@
-"""MCP client authentication (URS-07) and tool rate limiting (NFR-SEC-002)."""
+"""MCP authentication and rate-limiting checks for SRS-32–SRS-36."""
 
 import json
 
@@ -22,7 +22,7 @@ def clear_rate_limits():
     security.reset_rate_limits()
 
 
-# ---------- URS-07 bearer token parsing ----------
+# ---------- SRS-32 bearer token parsing ----------
 
 @pytest.mark.parametrize(
     "header,expected",
@@ -55,7 +55,7 @@ def test_authorization_accepts_configured_token(monkeypatch):
     assert security.is_authorized("token-c") is False
 
 
-# ---------- URS-07 enforced over HTTP ----------
+# ---------- SRS-32 / SRS-33 enforced over HTTP ----------
 
 def test_http_transport_rejects_missing_token(client, monkeypatch):
     monkeypatch.setenv("MCP_API_TOKENS", "valid-token")
@@ -112,7 +112,7 @@ def test_http_transport_accepts_valid_token(client, monkeypatch):
     assert len(json.loads(body)["result"]["tools"]) == 8
 
 
-# ---------- NFR-SEC-002 rate limiting ----------
+# ---------- SRS-34–SRS-36 rate limiting ----------
 
 def test_rate_limit_allows_calls_under_the_threshold(monkeypatch):
     monkeypatch.setattr(security, "RATE_LIMIT_PER_MINUTE", 3)

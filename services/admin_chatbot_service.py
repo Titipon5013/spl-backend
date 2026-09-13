@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime
+import time
+from datetime import datetime, timezone
 
 import requests
 from sqlalchemy.orm import Session
@@ -26,6 +27,9 @@ class AdminChatbotService:
         self.api_key = os.getenv("CLOUD_API_KEY")
         self.endpoint = os.getenv(
             "AGENT_ENDPOINT", "https://openrouter.ai/api/v1/chat/completions"
+        )
+        self.model = os.getenv(
+            "AGENT_MODEL", "meta-llama/llama-3.3-70b-instruct"
         )
 
         # Guardrail: LLMs often mistranslate English "occupancy" into hotel Thai
@@ -258,6 +262,7 @@ class AdminChatbotService:
         return {"type": "text", "text": text}
 
     async def get_reply(self, admin_id: str, user_message: str) -> dict:
+        deadline = time.monotonic() + 15.0
         print(f"[Admin] Processing message: {user_message} from {admin_id}")
         lang = "th" if self.is_thai(user_message) else "en"
 
@@ -278,7 +283,7 @@ class AdminChatbotService:
             "Content-Type": "application/json",
         }
 
-        current_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        current_datetime = datetime.now(timezone.utc).isoformat()
         dynamic_prompt = (
             self.system_prompt
             + f"\n[Reference: Current date and time is {current_datetime}]"
@@ -290,7 +295,7 @@ class AdminChatbotService:
         ]
 
         payload = {
-            "model": "meta-llama/llama-3.3-70b-instruct",
+            "model": self.model,
             "messages": messages_history,
             "tools": self._get_admin_tools_schema(),
             "tool_choice": "auto",
@@ -298,7 +303,10 @@ class AdminChatbotService:
 
         try:
             response = requests.post(
-                self.endpoint, headers=headers, json=payload, timeout=15
+                self.endpoint,
+                headers=headers,
+                json=payload,
+                timeout=self._remaining_timeout(deadline),
             )
             response.raise_for_status()
             ai_data = response.json()
@@ -337,7 +345,10 @@ class AdminChatbotService:
                 payload.pop("tool_choice", None)
 
                 response_step2 = requests.post(
-                    self.endpoint, headers=headers, json=payload, timeout=15
+                    self.endpoint,
+                    headers=headers,
+                    json=payload,
+                    timeout=self._remaining_timeout(deadline),
                 )
                 response_step2.raise_for_status()
                 final_ai_message = response_step2.json()["choices"][0]["message"][
@@ -368,3 +379,10 @@ class AdminChatbotService:
             else "Processing successful, but no matching data was found."
         )
         return {"type": "text", "text": err_msg}
+
+    @staticmethod
+    def _remaining_timeout(deadline: float) -> float:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise requests.exceptions.Timeout("Admin chatbot deadline exhausted")
+        return remaining

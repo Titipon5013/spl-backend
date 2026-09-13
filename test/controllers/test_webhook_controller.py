@@ -146,3 +146,80 @@ def test_location_event_replies_with_travel_eta(client):
         messaging.reply_message.call_args.args[0].messages[0].text
         == "ใช้เวลาเดินทางประมาณ 1 นาที"
     )
+
+
+def test_invalid_location_event_replies_with_controlled_error(client):
+    event = _message_event(
+        LocationMessageContent.construct(
+            type="location",
+            id="1",
+            title="invalid location",
+            address="outside geographic range",
+            latitude=95,
+            longitude=200,
+        )
+    )
+    parser = MagicMock()
+    parser.parse.return_value = [event]
+    messaging = MagicMock()
+
+    chatbot = MagicMock()
+    chatbot.calculate_travel_eta.side_effect = ValueError(
+        "latitude must be between -90 and 90"
+    )
+
+    with patch("routes.webhook_controller.user_parser", parser), patch(
+        "routes.webhook_controller.ApiClient"
+    ), patch("routes.webhook_controller.MessagingApi", return_value=messaging), patch(
+        "routes.webhook_controller.ChatbotService", return_value=chatbot
+    ):
+        response = client.post(WEBHOOK_URL, headers=HEADERS, content=b"{}")
+
+    assert response.status_code == 200
+    reply = messaging.reply_message.call_args.args[0].messages[0]
+    assert "พิกัดไม่ถูกต้อง" in reply.text
+
+
+def test_service_and_webhook_do_not_write_shared_coordinates(
+    client, db_session, capsys
+):
+    from services.user_chatbot_service import ChatbotService
+
+    latitude, longitude = 12.345678, 98.765432
+    service = ChatbotService(db_session)
+    service.calculate_eta = MagicMock(return_value="ok")
+    service.calculate_travel_eta(latitude, longitude)
+
+    event = _message_event(
+        LocationMessageContent.construct(
+            type="location",
+            id="1",
+            title="private location",
+            address="private location",
+            latitude=latitude,
+            longitude=longitude,
+        )
+    )
+    parser = MagicMock()
+    parser.parse.return_value = [event]
+    messaging = MagicMock()
+    messaging.reply_message.side_effect = RuntimeError(
+        f"delivery failed near {latitude}, {longitude}"
+    )
+    chatbot = MagicMock()
+    chatbot.calculate_travel_eta.return_value = "ใช้เวลาเดินทางประมาณ 1 นาที"
+
+    with patch("routes.webhook_controller.user_parser", parser), patch(
+        "routes.webhook_controller.ApiClient"
+    ), patch("routes.webhook_controller.MessagingApi", return_value=messaging), patch(
+        "routes.webhook_controller.ChatbotService", return_value=chatbot
+    ):
+        response = client.post(WEBHOOK_URL, headers=HEADERS, content=b"{}")
+
+    output = capsys.readouterr()
+    combined_output = output.out + output.err
+    assert response.status_code == 200
+    assert str(latitude) not in combined_output
+    assert str(longitude) not in combined_output
+    assert str(latitude) not in messaging.reply_message.call_args.args[0].messages[0].text
+    assert str(longitude) not in messaging.reply_message.call_args.args[0].messages[0].text

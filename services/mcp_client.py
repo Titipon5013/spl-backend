@@ -1,14 +1,13 @@
 """Feature 4 MCP client — invokes Feature 2 tools for the admin LINE bot.
 
-Production path: HTTP streamable transport at MCP_INTERNAL_URL with a bearer
-token from MCP_LINE_BOT_TOKEN (must also appear in MCP_API_TOKENS).
-
-Test / local fallback: MCP_INTERNAL_MODE=inprocess calls the FastMCP dispatcher
-in-process so unit tests do not need a live HTTP server.
+Production path: streamable HTTP at ``MCP_INTERNAL_URL`` with a bearer token
+from ``MCP_LINE_BOT_TOKEN``. Explicit ``MCP_INTERNAL_MODE=inprocess`` is kept
+only for isolated local/unit-test execution and uses the registered handlers.
 """
 
 from __future__ import annotations
 
+import inspect
 import json
 import os
 from typing import Any, Optional
@@ -71,16 +70,19 @@ class McpClient:
         return await self._call_http(mcp_name, args)
 
     async def _call_inprocess(self, name: str, arguments: dict[str, Any]) -> dict:
-        from mcp_server.server import mcp
+        from mcp_server.tools import INPROCESS_HANDLERS
 
         try:
-            result = await mcp.call_tool(name, arguments)
-            if isinstance(result, tuple):
-                result = result[0]
-            if not result:
+            handler = INPROCESS_HANDLERS.get(name)
+            if handler is None:
+                raise McpClientError(f"MCP tool '{name}' is not registered.")
+
+            result = handler(**arguments)
+            if inspect.isawaitable(result):
+                result = await result
+            if not isinstance(result, dict):
                 raise McpClientError(f"MCP tool '{name}' returned empty content.")
-            text = result[0].text
-            return json.loads(text)
+            return result
         except McpClientError:
             raise
         except Exception as exc:

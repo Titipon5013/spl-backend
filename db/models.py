@@ -145,7 +145,7 @@ class SystemAnomaly(Base):
 
 
 class AdminAlertSubscription(Base):
-    """Feature 4: linked admin LINE identity + push preferences (UC-10 / UC-11).
+    """Feature 4: linked admin LINE identity + push preferences (UC-16 / URS-25).
 
     One row per LINE user. Linking happens via /link <secret> on the admin bot.
     muted=True stops push alerts but still allows conversational queries.

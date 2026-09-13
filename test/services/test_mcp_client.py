@@ -1,5 +1,6 @@
 """Feature 4 MCP client — tool mapping and transport modes."""
 
+import asyncio
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -35,10 +36,10 @@ def test_unknown_admin_tool_raises():
 def test_http_mode_requires_bearer_token():
     client = McpClient(token="", mode="http")
     with pytest.raises(McpClientError, match="MCP_LINE_BOT_TOKEN"):
-        client.call_tool("get_parking_status", {"lot_id": "CAMT_01"})
+        asyncio.run(client.call_tool("get_parking_status", {"lot_id": "CAMT_01"}))
 
 
-def test_inprocess_mode_calls_fastmcp_dispatcher(db_session):
+def test_inprocess_mode_calls_registered_handler(db_session):
     from datetime import datetime
 
     from db.models import ParkingSnapshot
@@ -58,7 +59,9 @@ def test_inprocess_mode_calls_fastmcp_dispatcher(db_session):
     db_session.commit()
 
     client = McpClient(mode="inprocess")
-    result = client.call_tool("get_parking_status", {"lot_id": "CAMT_01"})
+    result = asyncio.run(
+        client.call_tool("get_parking_status", {"lot_id": "CAMT_01"})
+    )
 
     assert result["occupied_spaces"] == 23
     assert result["available_spaces"] == 7
@@ -108,9 +111,43 @@ def test_http_mode_passes_authorization_header(monkeypatch):
         base_url="http://127.0.0.1:8000/mcp/",
         mode="http",
     )
-    result = client.call_tool("get_parking_status", {"lot_id": "CAMT_01"})
+    result = asyncio.run(
+        client.call_tool("get_parking_status", {"lot_id": "CAMT_01"})
+    )
 
     assert captured["headers"]["Authorization"] == "Bearer line-bot-token"
     assert captured["url"] == "http://127.0.0.1:8000/mcp/"
     assert result["ok"] is True
     assert result["tool"] == "get_live_occupancy"
+
+
+def test_explicit_inprocess_mode_executes_registered_handler_inside_active_event_loop(
+    monkeypatch,
+):
+    from mcp_server import tools as mcp_tools
+
+    calls = []
+
+    def registered_handler(lot_id="CAMT_01"):
+        calls.append(lot_id)
+        return {"lot_id": lot_id, "available_spaces": 7}
+
+    monkeypatch.setitem(
+        mcp_tools.INPROCESS_HANDLERS, "get_live_occupancy", registered_handler
+    )
+
+    async def invoke_from_webhook_loop():
+        return await McpClient(mode="inprocess").call_tool(
+            "get_parking_status", {"lot_id": "CAMT_01"}
+        )
+
+    result = asyncio.run(invoke_from_webhook_loop())
+
+    assert result == {"lot_id": "CAMT_01", "available_spaces": 7}
+    assert calls == ["CAMT_01"]
+
+
+def test_default_mode_is_authenticated_http(monkeypatch):
+    monkeypatch.delenv("MCP_INTERNAL_MODE", raising=False)
+
+    assert McpClient(token="line-bot-token").mode == "http"

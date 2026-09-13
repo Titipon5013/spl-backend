@@ -173,7 +173,7 @@ def test_start_report_scheduler_registers_weekly_cron_job(monkeypatch):
 
 
 def test_start_report_scheduler_registers_anomaly_detection_job(monkeypatch):
-    """Feature 2: ตัวตรวจจับความผิดปกติต้องถูกลงทะเบียนไว้กับ scheduler เดิม (URS-13)"""
+    """Feature 2: anomaly detection remains registered with the existing scheduler."""
     from services import report_scheduler
 
     class FakeScheduler:

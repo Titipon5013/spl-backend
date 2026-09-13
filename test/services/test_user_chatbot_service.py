@@ -5,6 +5,7 @@ full-lot trend fallback, and the Haversine travel-time estimate.
 """
 
 import re
+import math
 from datetime import datetime, timedelta
 from unittest.mock import MagicMock, patch
 
@@ -155,6 +156,27 @@ def test_ambiguous_message_without_agent_key_degrades_gracefully(db_session):
     assert "parking assistant" in reply["text"]
 
 
+def test_out_of_domain_vehicle_is_rejected_without_agent_call(db_session):
+    service = ChatbotService(db_session)
+    service.agent_api_key = "unused-key"
+
+    with patch.object(chatbot_module.requests, "post") as mock_post:
+        reply = service.get_reply("boat")
+
+    assert "cars only" in reply["text"]
+    mock_post.assert_not_called()
+
+
+def test_empty_message_returns_safe_help(db_session):
+    service = ChatbotService(db_session)
+    service.agent_api_key = None
+
+    reply = service.get_reply("   ")
+
+    assert reply["type"] == "text"
+    assert "parking assistant" in reply["text"]
+
+
 # ---------- UTC-14: calculate_eta ----------
 
 def test_eta_minutes_to_full_uses_linear_fill_rate(db_session):
@@ -227,12 +249,74 @@ def test_eta_with_single_snapshot_returns_status_without_numeric_eta(db_session)
     assert "full in" not in reply
 
 
+def test_eta_stable_or_declining_occupancy_never_predicts_false_full(db_session):
+    now = datetime.utcnow()
+    db_session.add_all(
+        [
+            _snapshot2("CAMT_02", now - timedelta(minutes=16), 34, 22, 12),
+            _snapshot2("CAMT_02", now, 34, 20, 14),
+        ]
+    )
+    db_session.commit()
+
+    service = ChatbotService(db_session)
+    reply = service.calculate_eta(
+        lot_id="CAMT_02", lang="en", travel_mins=100_000
+    )
+
+    assert "should still be spaces available" in reply
+    assert "expected to be full" not in reply
+
+
+def test_full_lot_without_future_opening_returns_alternative(db_session):
+    now = datetime.utcnow()
+    db_session.add(_snapshot2("CAMT_02", now, 34, 34, 0))
+    db_session.commit()
+
+    service = ChatbotService(db_session)
+    service.analytics_service = MagicMock()
+    service.analytics_service.get_occupancy_trends.return_value = TrendResponse(
+        lot_id="CAMT_02", trends=[]
+    )
+
+    reply = service.calculate_eta(lot_id="CAMT_02", lang="en")
+
+    assert "alternative parking" in reply
+
+
 def test_eta_without_any_data_returns_apology(db_session):
     service = ChatbotService(db_session)
 
     reply = service.calculate_eta(lot_id="CAMT_02", lang="en")
 
     assert "not available" in reply
+
+
+def test_eta_rejects_snapshot_older_than_fifteen_minutes(db_session):
+    stale_time = datetime.utcnow() - timedelta(minutes=16)
+    db_session.add(
+        ParkingSnapshot(
+            lot_id="CAMT_01",
+            timestamp=stale_time,
+            available_spaces=12,
+            total_spaces=30,
+            occupied_spaces=18,
+            occupacy_rate=60.0,
+            confidence=0.95,
+            processing_time_seconds=0.1,
+        )
+    )
+    db_session.commit()
+
+    service = ChatbotService(db_session)
+    service.analytics_service = MagicMock()
+
+    thai_reply = service.calculate_eta(lot_id="CAMT_01", lang="th")
+    english_reply = service.calculate_eta(lot_id="CAMT_01", lang="en")
+
+    assert "ข้อมูลที่จอดรถไม่เป็นปัจจุบัน" in thai_reply
+    assert "parking data is out of date" in english_reply.lower()
+    service.analytics_service.get_occupancy_trends.assert_not_called()
 
 
 # ---------- UTC-15: calculate_travel_eta ----------
@@ -266,3 +350,119 @@ def test_travel_eta_far_from_campus_scales_with_distance(db_session):
     service.calculate_travel_eta(13.7563, 100.5018)
 
     assert captured[0] > 100  # ~360 km straight-line
+
+
+def test_travel_eta_at_destination_uses_minimum_one_minute(db_session):
+    service = ChatbotService(db_session)
+    captured = {}
+    service.calculate_eta = lambda lot_id, lang="th", travel_mins=0: captured.setdefault(
+        "travel_mins", travel_mins
+    )
+
+    service.calculate_travel_eta(service.camt_lat, service.camt_lng)
+
+    assert captured["travel_mins"] == 1
+
+
+def test_travel_eta_uses_approved_camt_coordinates_and_speed(db_session):
+    service = ChatbotService(db_session)
+    captured = {}
+
+    def fake_eta(lot_id, lang="th", travel_mins=0):
+        captured["travel_mins"] = travel_mins
+        return "ok"
+
+    service.calculate_eta = fake_eta
+    origin_lat, origin_lng = 18.700, 98.800
+    service.calculate_travel_eta(origin_lat, origin_lng)
+
+    target_lat, target_lng = 18.795, 98.952
+    radius_km = 6371
+    delta_lat = math.radians(target_lat - origin_lat)
+    delta_lng = math.radians(target_lng - origin_lng)
+    haversine = (
+        math.sin(delta_lat / 2) ** 2
+        + math.cos(math.radians(origin_lat))
+        * math.cos(math.radians(target_lat))
+        * math.sin(delta_lng / 2) ** 2
+    )
+    distance_km = radius_km * 2 * math.atan2(
+        math.sqrt(haversine), math.sqrt(1 - haversine)
+    )
+    expected_minutes = max(1, math.ceil(distance_km / 30 * 60))
+
+    assert service.camt_lat == target_lat
+    assert service.camt_lng == target_lng
+    assert captured["travel_mins"] == expected_minutes
+
+
+def test_travel_eta_rejects_latitude_outside_geographic_range(db_session):
+    service = ChatbotService(db_session)
+
+    with pytest.raises(ValueError, match="latitude must be between -90 and 90"):
+        service.calculate_travel_eta(95, 98.951)
+
+
+def test_travel_eta_rejects_longitude_outside_geographic_range(db_session):
+    service = ChatbotService(db_session)
+
+    with pytest.raises(ValueError, match="longitude must be between -180 and 180"):
+        service.calculate_travel_eta(18.802, 200)
+
+
+def test_commuter_agent_uses_configured_openrouter_model(db_session, monkeypatch):
+    monkeypatch.setenv("AGENT_MODEL", "vendor/custom-model")
+    monkeypatch.delenv("AGENT_ENDPOINT", raising=False)
+    service = ChatbotService(db_session)
+
+    assert service.agent_endpoint == "https://openrouter.ai/api/v1/chat/completions"
+    assert service.agent_model == "vendor/custom-model"
+
+
+# ---------- SRS-65: direct backup-plan warning rule ----------
+
+def test_backup_warning_when_rising_occupancy_fills_before_eta(db_session):
+    """SRS-65: mins_to_full < ETA must produce a backup-plan warning."""
+    now = datetime.utcnow()
+    db_session.add_all(
+        [
+            _snapshot2("CAMT_02", now - timedelta(minutes=16), 34, 20, 14),
+            _snapshot2("CAMT_02", now, 34, 30, 4),
+        ]
+    )
+    db_session.commit()
+
+    reply = ChatbotService(db_session).calculate_eta(
+        lot_id="CAMT_02", lang="en", travel_mins=10
+    )
+
+    assert "expected to be full" in reply
+    assert "alternative parking" in reply.lower()
+
+
+def test_backup_warning_at_exactly_three_spaces_and_twelve_minute_eta(db_session):
+    """SRS-65: three spaces and ETA >= 10 minutes is a warning boundary."""
+    now = datetime.utcnow()
+    db_session.add(_snapshot2("CAMT_02", now, 34, 31, 3))
+    db_session.commit()
+
+    reply = ChatbotService(db_session).calculate_eta(
+        lot_id="CAMT_02", lang="en", travel_mins=12
+    )
+
+    assert "only 3 spaces are left" in reply
+    assert "backup parking plan" in reply.lower()
+
+
+def test_normal_guidance_at_four_spaces_and_nine_minute_eta(db_session):
+    """SRS-65: four spaces and a nine-minute ETA must not warn."""
+    now = datetime.utcnow()
+    db_session.add(_snapshot2("CAMT_02", now, 34, 30, 4))
+    db_session.commit()
+
+    reply = ChatbotService(db_session).calculate_eta(
+        lot_id="CAMT_02", lang="en", travel_mins=9
+    )
+
+    assert "should still be spaces available" in reply
+    assert "backup" not in reply.lower()

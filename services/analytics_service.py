@@ -214,7 +214,7 @@ class AnalyticsService:
         }
 
     def find_available_slots(self, lot_id: str) -> dict:
-        """ช่องจอดที่ว่างอยู่ตอนนี้ (URS-12)"""
+        """ช่องจอดที่ว่างอยู่ตอนนี้ (URS-10)."""
         latest_events = self._latest_event_per_spot(lot_id)
 
         available = [event.spot_id for event in latest_events if not event.is_occupied]

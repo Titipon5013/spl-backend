@@ -13,11 +13,16 @@ class ChatbotService:
         self.db = db
         self.analytics_service = AnalyticsService(db)
 
-        self.camt_lat = 18.801092335425654
-        self.camt_lng = 98.95082184123963
+        self.camt_lat = 18.795
+        self.camt_lng = 98.952
 
         self.agent_api_key = os.getenv("CLOUD_API_KEY")
-        self.agent_endpoint = os.getenv("AGENT_ENDPOINT", "https://api.groq.com/openai/v1/chat/completions")
+        self.agent_endpoint = os.getenv(
+            "AGENT_ENDPOINT", "https://openrouter.ai/api/v1/chat/completions"
+        )
+        self.agent_model = os.getenv(
+            "AGENT_MODEL", "meta-llama/llama-3.3-70b-instruct"
+        )
 
     def is_thai(self, text: str) -> bool:
         return any('\u0E00' <= c <= '\u0E7F' for c in text)
@@ -84,7 +89,7 @@ class ChatbotService:
                 }
 
                 payload = {
-                    "model": "llama-3.3-70b-versatile",
+                    "model": self.agent_model,
                     "messages": [
                         {"role": "system",
                          "content": "คุณคือผู้ช่วย ParkPilot ตอบคำถามสั้นๆ สุภาพ ถ้าถามเรื่องที่จอดรถให้เรียกใช้ Tool ทันที"},
@@ -136,13 +141,18 @@ class ChatbotService:
             print("Warning: No parking data found in the database.")
             return "ขออภัยครับ ตอนนี้ระบบยังไม่มีข้อมูล" if lang == "th" else "Sorry, parking data is not available at the moment."
 
+        if latest.timestamp < now - timedelta(minutes=15):
+            if lang == "th":
+                return "ข้อมูลที่จอดรถไม่เป็นปัจจุบัน กรุณาลองใหม่อีกครั้งภายหลังครับ"
+            return "Parking data is out of date. Please try again later."
+
         time_15_mins_ago = now - timedelta(minutes=15)
         past = self.db.query(model).filter(
             model.lot_id == lot_id, model.timestamp <= time_15_mins_ago
         ).order_by(model.timestamp.desc()).first()
 
         rate_per_min = 0.0
-        mins_to_full = 9999
+        mins_to_full = math.inf
         if past and latest.occupied_spaces > past.occupied_spaces:
             diff = latest.occupied_spaces - past.occupied_spaces
             rate_per_min = diff / 15.0
@@ -193,7 +203,12 @@ class ChatbotService:
         return "ตอนนี้ที่จอดเต็มแน่นเลยครับ แนะนำให้หาที่จอดอื่นนะครับ" if lang == "th" else "Parking is fully occupied. Please find alternative parking."
 
     def calculate_travel_eta(self, lat: float, lng: float, lang: str = "th") -> str:
-        print(f"Calculating travel ETA from ({lat}, {lng}) to CAMT")
+        print("Calculating travel ETA to CAMT")
+
+        if not -90 <= lat <= 90:
+            raise ValueError("latitude must be between -90 and 90")
+        if not -180 <= lng <= 180:
+            raise ValueError("longitude must be between -180 and 180")
 
         R = 6371
         dLat = math.radians(self.camt_lat - lat)
@@ -203,7 +218,7 @@ class ChatbotService:
         c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
         distance_km = R * c
 
-        travel_mins = int((distance_km * 1.3) * 2)
+        travel_mins = math.ceil(distance_km / 30 * 60)
         if travel_mins < 1: travel_mins = 1
 
         print(f"Estimated distance: {distance_km:.2f} km, Travel time: {travel_mins} mins")

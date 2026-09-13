@@ -1,4 +1,4 @@
-"""MCP tool definitions for the ParkPilot parking system (URS-08 to URS-15).
+"""MCP tool definitions supporting restored URS-08 through URS-14.
 
 Each tool is a thin, strictly-typed wrapper over the existing service layer so
 that the dashboard, the REST API and AI agents all read the same logic.
@@ -6,7 +6,7 @@ that the dashboard, the REST API and AI agents all read the same logic.
 
 from contextlib import contextmanager
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Callable, Optional
 
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.exceptions import ToolError
@@ -17,6 +17,18 @@ from services.anomaly_service import MONITORED_LOTS, AnomalyService
 from mcp_server.security import rate_limited
 
 ANOMALY_TYPES = ("stuck_slot", "pipeline_inactive", "device_offline")
+INPROCESS_HANDLERS: dict[str, Callable[..., dict]] = {}
+
+
+def registered_tool(mcp: FastMCP):
+    """Register one rate-limited wrapper for MCP and direct local execution."""
+
+    def decorator(func):
+        handler = rate_limited(func)
+        INPROCESS_HANDLERS[func.__name__] = handler
+        return mcp.tool()(handler)
+
+    return decorator
 
 
 @contextmanager
@@ -67,10 +79,9 @@ def _resolve_range(
 def register_tools(mcp: FastMCP) -> None:
     """ลงทะเบียน tool ทั้งหมดเข้ากับ FastMCP instance ที่ส่งเข้ามา"""
 
-    @mcp.tool()
-    @rate_limited
+    @registered_tool(mcp)
     def get_live_occupancy(lot_id: str = "CAMT_01") -> dict:
-        """Get the current occupancy snapshot for a parking lot (URS-08).
+        """Get the current occupancy snapshot for a parking lot (MD-11 / URS-08).
 
         Use this to answer "how full is the lot right now" or "how many spaces
         are left". Returns total, occupied and available space counts, the
@@ -90,8 +101,7 @@ def register_tools(mcp: FastMCP) -> None:
             )
         return snapshot
 
-    @mcp.tool()
-    @rate_limited
+    @registered_tool(mcp)
     def check_slot_status(spot_id: str, lot_id: str = "CAMT_01") -> dict:
         """Check the current state of one specific parking slot (URS-09).
 
@@ -113,10 +123,9 @@ def register_tools(mcp: FastMCP) -> None:
             )
         return status
 
-    @mcp.tool()
-    @rate_limited
+    @registered_tool(mcp)
     def find_available_slots(lot_id: str = "CAMT_01") -> dict:
-        """List the parking slots that are free right now (URS-12).
+        """List the parking slots that are free right now (URS-10).
 
         Use this when the administrator wants the specific slot IDs that are
         open, rather than just a count.
@@ -135,14 +144,13 @@ def register_tools(mcp: FastMCP) -> None:
             )
         return result
 
-    @mcp.tool()
-    @rate_limited
+    @registered_tool(mcp)
     def analyze_occupancy_trends(
         lot_id: str = "CAMT_01",
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
     ) -> dict:
-        """Analyse historical occupancy trends hour by hour (URS-10).
+        """Analyse historical occupancy trends hour by hour (URS-11).
 
         Use this for questions about patterns over time, such as
         "when is the lot busiest?" or "how was occupancy last Tuesday?".
@@ -161,14 +169,13 @@ def register_tools(mcp: FastMCP) -> None:
 
         return trends.model_dump(mode="json")
 
-    @mcp.tool()
-    @rate_limited
+    @registered_tool(mcp)
     def get_dwell_time_stats(
         lot_id: str = "CAMT_01",
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
     ) -> dict:
-        """Get vehicle dwell time and throughput statistics (URS-11).
+        """Get vehicle dwell time and throughput statistics (URS-12).
 
         Use this for questions such as "how long do cars stay on average?",
         "how many vehicles came in this week?" or "what was peak occupancy?".
@@ -188,8 +195,7 @@ def register_tools(mcp: FastMCP) -> None:
         kpis["period_end"] = end.isoformat()
         return kpis
 
-    @mcp.tool()
-    @rate_limited
+    @registered_tool(mcp)
     def get_system_anomalies(
         anomaly_type: Optional[str] = None,
         include_reviewed: bool = False,
@@ -221,8 +227,7 @@ def register_tools(mcp: FastMCP) -> None:
 
         return {"count": len(anomalies), "anomalies": anomalies}
 
-    @mcp.tool()
-    @rate_limited
+    @registered_tool(mcp)
     def mark_anomaly_reviewed(anomaly_id: int, reviewed_by: str) -> dict:
         """Mark a flagged anomaly as officially reviewed by an administrator (URS-14).
 
@@ -244,8 +249,7 @@ def register_tools(mcp: FastMCP) -> None:
             )
         return anomaly
 
-    @mcp.tool()
-    @rate_limited
+    @registered_tool(mcp)
     def get_system_health(lot_id: str = "CAMT_01") -> dict:
         """Get the operational status of the edge board and cameras (URS-13 support).
 

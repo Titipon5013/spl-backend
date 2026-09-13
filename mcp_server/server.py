@@ -1,4 +1,4 @@
-"""FastMCP instance and the authenticated HTTP transport wrapper."""
+"""FastMCP HTTP transport and bearer authentication (SRS-30–SRS-33)."""
 
 import os
 from contextlib import asynccontextmanager
@@ -35,9 +35,10 @@ Timestamps are UTC and dates are ISO 8601.\
 mcp = FastMCP(
     name="parkpilot",
     instructions=INSTRUCTIONS,
-    # stateless ทำให้ mount รวมกับ FastAPI ได้โดยไม่ต้องจัดการ session ข้าม request
+    # SRS-30: stateless HTTP compatibility.
     stateless_http=True,
-    # main.py mount แอปนี้ไว้ที่ /mcp อยู่แล้ว ถ้าปล่อย default ("/mcp")
+    # SRS-31: main.py mounts this streamable HTTP app at /mcp.
+    # ถ้าปล่อย default ("/mcp")
     # เส้นทางจริงจะกลายเป็น /mcp/mcp
     streamable_http_path="/",
     transport_security=TransportSecuritySettings(allowed_hosts=_allowed_hosts()),
@@ -82,7 +83,7 @@ def _build_transport_app():
         }
         token = _extract_bearer(headers.get("authorization"))
 
-        if not is_authorized(token):
+        if not is_authorized(token):  # SRS-32 / SRS-33
             response = JSONResponse(
                 {
                     "error": "unauthorized",

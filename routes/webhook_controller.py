@@ -34,8 +34,8 @@ async def user_line_webhook(request: Request, db: Session = Depends(get_db)):
     except InvalidSignatureError:
         print("Error: Invalid signature. Please check your USER_LINE_CHANNEL_SECRET.")
         raise HTTPException(status_code=400, detail="Invalid signature")
-    except Exception as e:
-        print(f"Error parsing webhook: {e}")
+    except Exception:
+        print("Error parsing user webhook")
         raise HTTPException(status_code=500, detail="Internal Server Error")
 
     with ApiClient(user_configuration) as api_client:
@@ -72,9 +72,12 @@ async def user_line_webhook(request: Request, db: Session = Depends(get_db)):
             elif isinstance(event.message, LocationMessageContent):
                 lat = event.message.latitude
                 lng = event.message.longitude
-                print(f"Received Location: Lat={lat}, Lng={lng}")
+                print("Received Location message")
 
-                reply_text = chatbot_service.calculate_travel_eta(lat, lng)
+                try:
+                    reply_text = chatbot_service.calculate_travel_eta(lat, lng)
+                except ValueError:
+                    reply_text = "พิกัดไม่ถูกต้อง กรุณาแชร์ตำแหน่งใหม่อีกครั้งครับ"
                 reply_message = TextMessage(text=reply_text)
 
             if reply_message:
@@ -85,7 +88,7 @@ async def user_line_webhook(request: Request, db: Session = Depends(get_db)):
                             messages=[reply_message]
                         )
                     )
-                except Exception as e:
-                    print(f"Error sending reply to LINE: {e}")
+                except Exception:
+                    print("Error sending user reply to LINE")
 
     return "OK"

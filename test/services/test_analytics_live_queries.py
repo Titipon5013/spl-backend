@@ -1,4 +1,4 @@
-"""Tests for the AnalyticsService methods added for Feature 2 (URS-08, URS-09, URS-12)."""
+"""Tests for Feature 2 live occupancy, slot status, and slot discovery."""
 
 from datetime import datetime, timedelta
 
@@ -70,7 +70,7 @@ def test_check_slot_status_returns_none_for_unknown_slot(db_session):
     assert AnalyticsService(db_session).check_slot_status("CAMT_01", "ZZ9") is None
 
 
-# ---------- URS-12 ----------
+# ---------- URS-10 ----------
 
 def test_find_available_slots_reflects_latest_state_per_spot(db_session):
     _event(db_session, "A1", True, minutes_ago=30)

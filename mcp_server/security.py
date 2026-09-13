@@ -1,4 +1,4 @@
-"""Client authentication (URS-07) and tool-invocation rate limiting (NFR-SEC-002)."""
+"""Client authentication and per-client rate limiting (SRS-32–SRS-36)."""
 
 import os
 import time
@@ -45,7 +45,7 @@ def client_context(client_id: str):
 
 
 def check_rate_limit(client_id: str) -> None:
-    """Sliding window ต่อผู้เรียกหนึ่งราย"""
+    """MD-12 design: validate one client's 60-second sliding window."""
     now = time.monotonic()
     history = _invocations[client_id]
 

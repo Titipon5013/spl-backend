@@ -1,4 +1,4 @@
-"""Feature 4 admin LINE push notifications for new system anomalies (UC-10)."""
+"""Feature 4 admin LINE push notifications (URS-26 / SRS-48–SRS-49)."""
 
 from __future__ import annotations
 
@@ -182,7 +182,7 @@ class AdminNotificationService:
                     skipped_type += 1
                     continue
 
-                if not self._record_delivery(anomaly.id, sub.line_user_id):
+                if self._already_delivered(anomaly.id, sub.line_user_id):
                     skipped_dup += 1
                     continue
 
@@ -191,13 +191,20 @@ class AdminNotificationService:
                         sub.line_user_id,
                         format_anomaly_alert(anomaly, self.db),
                     )
-                    pushed += 1
                 except Exception as exc:
                     failures += 1
                     print(
                         f"[admin-notify] push failed for {sub.line_user_id} "
                         f"anomaly={anomaly.id}: {exc}"
                     )
+                    continue
+
+                # Persist only successful LINE pushes. Failed attempts stay
+                # undelivered so the next scheduler run can retry them.
+                if self._record_delivery(anomaly.id, sub.line_user_id):
+                    pushed += 1
+                else:
+                    skipped_dup += 1
 
         return {
             "open_anomalies": len(anomalies),
