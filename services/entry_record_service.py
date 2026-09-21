@@ -31,7 +31,12 @@ class EntryRecordService:
                 old_filename = db_entry_record.plate_image_url.split("/")[-1]
                 self.s3_cloudfront.delete_file(old_filename)
 
-            file_url = self.s3_cloudfront.upload_file(file.file, file.filename)
+            file_url = self.s3_cloudfront.upload_file(
+                file.file,
+                file.filename,
+                prefix="entry-records/",
+                content_type=getattr(file, "content_type", None),
+            )
             db_entry_record.plate_image_url = file_url # type: ignore
 
         db_entry_record.plate_number = plate_number # type: ignore

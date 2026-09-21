@@ -69,7 +69,12 @@ def test_create_plate_request(mock_repo):
 
     result = service.create_plate_request(form_data)
 
-    service.s3_cloudfront.upload_file.assert_called_once_with(mock_photo.file, "plate.jpg")
+    service.s3_cloudfront.upload_file.assert_called_once_with(
+        mock_photo.file,
+        "plate.jpg",
+        prefix="plate-requests/",
+        content_type=mock_photo.content_type,
+    )
     mock_repo.create_license_plate_request.assert_called_once_with(request_data)
     assert result == mock_created_request
 
@@ -77,7 +82,12 @@ def test_update_plate_status_approved(plate_request_service, mock_repo):
     mock_user = Admin(id=1, email="admin@example.com", role="admin")
     req_id = 1
     new_status = RequestStatusUpdate(status=RequestStatus.approved)
-    
+
+    mock_repo.get_request_by_id.return_value = LicensePlateRequest(
+        id=req_id, plate_number="ABC-123", user_id=1,
+        plate_image_url="url", status=RequestStatus.pending,
+    )
+    mock_repo.get_plate_by_number.return_value = None
     mock_updated_req = LicensePlateRequest(id=req_id, plate_number="ABC-123", user_id=1, plate_image_url="url", status=RequestStatus.approved)
     mock_repo.update_req_status.return_value = mock_updated_req
 
@@ -85,13 +95,13 @@ def test_update_plate_status_approved(plate_request_service, mock_repo):
 
     mock_repo.update_req_status.assert_called_once_with(req_id, new_status)
     mock_repo.add_plate.assert_called_once()
-    
+
     # Check the actual object passed to add_plate
     added_plate = mock_repo.add_plate.call_args[0][0]
     assert added_plate.plate_number == mock_updated_req.plate_number
     assert added_plate.user_id == mock_updated_req.user_id
     assert added_plate.plate_image_url == mock_updated_req.plate_image_url
-    
+
     assert result == mock_updated_req
 
 def test_update_plate_status_rejected(plate_request_service, mock_repo):
@@ -99,6 +109,11 @@ def test_update_plate_status_rejected(plate_request_service, mock_repo):
     req_id = 1
     new_status = RequestStatusUpdate(status=RequestStatus.rejected)
 
+    mock_repo.get_request_by_id.return_value = LicensePlateRequest(
+        id=req_id, plate_number="ABC-123", user_id=1,
+        plate_image_url="url", status=RequestStatus.pending,
+    )
+    mock_repo.get_plate_by_number.return_value = None
     mock_updated_req = LicensePlateRequest(id=req_id, status=RequestStatus.rejected)
     mock_repo.update_req_status.return_value = mock_updated_req
 

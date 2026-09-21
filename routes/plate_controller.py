@@ -40,7 +40,7 @@ def create_plate(
 ):
     if not current_user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
-    photo_url = s3_cloudfront.upload_file(photo.file, photo.filename)
+    photo_url = s3_cloudfront.upload_file(photo.file, photo.filename, prefix="plates/", content_type=photo.content_type)
     payload = LicensePlateCreate(
         user_email=email,
         username=name,
@@ -64,7 +64,7 @@ async def update_plate(
 
     photo_url = None
     if file:
-        photo_url = s3_cloudfront.upload_file(file.file, file.filename)
+        photo_url = s3_cloudfront.upload_file(file.file, file.filename, prefix="plates/", content_type=file.content_type)
 
     payload = LicensePlateUpdate(
         plate_number=plate_number,

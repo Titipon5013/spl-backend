@@ -6,6 +6,7 @@ that the dashboard, the REST API and AI agents all read the same logic.
 
 from contextlib import contextmanager
 from datetime import datetime, timedelta
+import os
 from typing import Callable, Optional
 
 from mcp.server.fastmcp import FastMCP
@@ -72,6 +73,11 @@ def _resolve_range(
         raise ToolError(
             f"start_date ({start.isoformat()}) must be earlier than "
             f"end_date ({end.isoformat()})."
+        )
+    max_range_days = int(os.getenv("MCP_MAX_RANGE_DAYS", "366"))
+    if (end - start) > timedelta(days=max_range_days):
+        raise ToolError(
+            f"Requested range exceeds the maximum of {max_range_days} days."
         )
     return start, end
 

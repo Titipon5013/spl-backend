@@ -3,6 +3,8 @@ from fastapi import APIRouter, Depends, Query, UploadFile, File, Form, HTTPExcep
 from schemas.entry_record import EntryRecord, WeeklyUsage
 from services.entry_record_service import EntryRecordService
 from services.dependencies import get_entry_record_service
+from auth import dependencies
+from db.models import Admin
 from datetime import date
 
 router = APIRouter(prefix="/api", tags=["entry-records"])
@@ -10,6 +12,7 @@ router = APIRouter(prefix="/api", tags=["entry-records"])
 @router.get("/entry-records", response_model=List[EntryRecord])
 def get_all_entry_records(
     entry_record_service: EntryRecordService = Depends(get_entry_record_service),
+    current_user: Admin = Depends(dependencies.get_current_admin_user),
     start_date: Optional[date] = Query(None),
     end_date: Optional[date] = Query(None)
 ):
@@ -18,6 +21,7 @@ def get_all_entry_records(
 @router.get("/entry-records/weekly-usage", response_model=List[WeeklyUsage])
 def get_weekly_usage(
     entry_record_service: EntryRecordService = Depends(get_entry_record_service),
+    current_user: Admin = Depends(dependencies.get_current_admin_user),
 ):
     return entry_record_service.get_weekly_usage()
 
@@ -43,6 +47,7 @@ def update_entry_record(
     plate_number: str = Form(...),
     file: Optional[UploadFile] = File(None),
     entry_record_service: EntryRecordService = Depends(get_entry_record_service),
+    current_user: Admin = Depends(dependencies.get_current_admin_user),
 ):
     try:
         return entry_record_service.update_entry_record(
@@ -57,6 +62,7 @@ def update_entry_record(
 def delete_entry_record(
     entry_id: int,
     entry_record_service: EntryRecordService = Depends(get_entry_record_service),
+    current_user: Admin = Depends(dependencies.get_current_admin_user),
 ):
     try:
         entry_record_service.delete_entry_record(entry_id)

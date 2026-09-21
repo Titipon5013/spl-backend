@@ -3,6 +3,8 @@ from fastapi.responses import Response
 from schemas.parking import ParkingSnapshotResponse
 from services.dependencies import get_parking_service
 from services.parking_service import ParkingService
+from auth import dependencies
+from db.models import Admin
 
 router = APIRouter(prefix="/api/parking", tags=["parking"])
 
@@ -38,6 +40,7 @@ def get_parking2_inference(
 @router.get("/open")
 def get_open_gate(
     parking_service: ParkingService = Depends(get_parking_service),
+    current_user: Admin = Depends(dependencies.get_current_admin_user),
 ):
     return parking_service.open_gate()
 
@@ -52,6 +55,7 @@ def get_exit_gate_status(
 @router.post("/exit-gate/start")
 def start_exit_gate_service(
     parking_service: ParkingService = Depends(get_parking_service),
+    current_user: Admin = Depends(dependencies.get_current_admin_user),
 ):
     return parking_service.start_exit_gate_service()
 
@@ -59,5 +63,6 @@ def start_exit_gate_service(
 @router.post("/exit-gate/stop")
 def stop_exit_gate_service(
     parking_service: ParkingService = Depends(get_parking_service),
+    current_user: Admin = Depends(dependencies.get_current_admin_user),
 ):
     return parking_service.stop_exit_gate_service()

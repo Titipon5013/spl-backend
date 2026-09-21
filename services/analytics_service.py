@@ -14,9 +14,12 @@ from schemas.analytics import (
 from datetime import datetime, timedelta
 from typing import Optional
 from collections import defaultdict
+import os
 
 
 class AnalyticsService:
+    MAX_QUERY_ROWS = int(os.getenv("ANALYTICS_MAX_QUERY_ROWS", "50000"))
+
     def __init__(self, db: Session):
         self.db = db
 
@@ -70,7 +73,7 @@ class AnalyticsService:
             model.lot_id == lot_id,
             model.timestamp >= start_date,
             model.timestamp <= end_date
-        ).all()
+        ).limit(self.MAX_QUERY_ROWS).all()
 
         hourly_data = defaultdict(list)
         for snap in query:
@@ -98,7 +101,7 @@ class AnalyticsService:
             model.lot_id == lot_id,
             model.timestamp >= start_date,
             model.timestamp <= end_date,
-        ).all()
+        ).limit(self.MAX_QUERY_ROWS).all()
 
         utilization = 0.0
         peak_occupancy = 0
@@ -239,6 +242,7 @@ class AnalyticsService:
                 ParkingEventLog.timestamp <= end_date,
             )
             .order_by(ParkingEventLog.spot_id, ParkingEventLog.timestamp)
+            .limit(self.MAX_QUERY_ROWS)
             .all()
         )
 

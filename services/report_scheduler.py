@@ -87,6 +87,8 @@ def start_report_scheduler():
         minute=cron_minute,
         id="weekly_parkpilot_report",
         replace_existing=True,
+        max_instances=1,
+        coalesce=True,
     )
     _scheduler.add_job(
         _run_anomaly_detection,
@@ -94,6 +96,8 @@ def start_report_scheduler():
         minutes=anomaly_interval,
         id="parkpilot_anomaly_detection",
         replace_existing=True,
+        max_instances=1,
+        coalesce=True,
     )
     _scheduler.start()
     return _scheduler

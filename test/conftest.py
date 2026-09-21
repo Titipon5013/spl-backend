@@ -4,6 +4,8 @@ import sys
 os.environ.setdefault("DATABASE_URL", "sqlite:///./test.db")
 os.environ.setdefault("SECRET_KEY", "test-secret-key")
 os.environ.setdefault("EMAIL_DISABLED", "true")
+# Keep the login limiter out of the way for functional tests.
+os.environ.setdefault("LOGIN_RATE_LIMIT_PER_MINUTE", "0")
 # MCP (Feature 2): TestClient ส่ง Host เป็น "testserver" ต้องอนุญาตไว้
 # ไม่งั้น DNS rebinding protection จะตอบ 421 ตั้งแต่ยังไม่ถึงชั้นยืนยันตัวตน
 os.environ.setdefault("MCP_ALLOWED_HOSTS", "testserver,localhost,127.0.0.1")

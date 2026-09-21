@@ -21,7 +21,14 @@ def test_google_callback_creates_pending_admin(mock_exchange, client, db_session
         "name": "New OAuth",
     }
 
-    response = client.get("/api/oauth/google/callback?code=fake-code", follow_redirects=False)
+    client.get("/api/oauth/google/login", follow_redirects=False)
+    state = client.cookies.get("oauth_state")
+    assert state
+
+    response = client.get(
+        f"/api/oauth/google/callback?code=fake-code&state={state}",
+        follow_redirects=False,
+    )
 
     assert response.status_code == 307
     assert "oauth_status=pending" in response.headers["location"]
@@ -30,3 +37,11 @@ def test_google_callback_creates_pending_admin(mock_exchange, client, db_session
     assert admin.auth_provider == AuthProvider.google
     assert admin.approval_status == ApprovalStatus.pending
     assert admin.oauth_sub == "google-sub-999"
+
+
+def test_google_callback_rejects_missing_state(client, db_session):
+    response = client.get(
+        "/api/oauth/google/callback?code=fake-code&state=bogus",
+        follow_redirects=False,
+    )
+    assert response.status_code == 400

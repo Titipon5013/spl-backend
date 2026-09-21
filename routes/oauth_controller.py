@@ -1,6 +1,7 @@
+import secrets
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
@@ -12,17 +13,37 @@ from enums import ApprovalStatus, AuthProvider, RoleEnum
 
 router = APIRouter(tags=["OAuth"])
 
+OAUTH_STATE_COOKIE = "oauth_state"
+
 
 @router.get("/api/oauth/google/login")
 async def google_login():
-    return RedirectResponse(url=get_google_login_url())
+    state = secrets.token_urlsafe(32)
+    response = RedirectResponse(url=get_google_login_url(state=state))
+    response.set_cookie(
+        key=OAUTH_STATE_COOKIE,
+        value=state,
+        max_age=600,
+        httponly=True,
+        samesite="lax",
+    )
+    return response
 
 
 @router.get("/api/oauth/google/callback")
 async def google_callback(
+    request: Request,
     code: str = Query(...),
+    state: str = Query(...),
     db: Session = Depends(get_db),
 ):
+    expected_state = request.cookies.get(OAUTH_STATE_COOKIE)
+    if not expected_state or not secrets.compare_digest(expected_state, state):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid OAuth state",
+        )
+
     try:
         user_info = await exchange_code_for_user_info(code)
     except Exception as exc:
@@ -55,8 +76,12 @@ async def google_callback(
 
     if admin.approval_status != ApprovalStatus.approved:
         params = urlencode({"oauth_status": admin.approval_status.value})
-        return RedirectResponse(url=f"{FRONTEND_URL}/login?{params}")
+        response = RedirectResponse(url=f"{FRONTEND_URL}/login?{params}")
+        response.delete_cookie(OAUTH_STATE_COOKIE)
+        return response
 
     token = create_access_token({"user_id": admin.id, "role": admin.role.value})
     params = urlencode({"token": token})
-    return RedirectResponse(url=f"{FRONTEND_URL}/login?{params}")
+    response = RedirectResponse(url=f"{FRONTEND_URL}/login?{params}")
+    response.delete_cookie(OAUTH_STATE_COOKIE)
+    return response

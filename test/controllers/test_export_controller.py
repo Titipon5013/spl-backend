@@ -166,6 +166,8 @@ def test_start_report_scheduler_registers_weekly_cron_job(monkeypatch):
             "minute": 30,
             "id": "weekly_parkpilot_report",
             "replace_existing": True,
+            "max_instances": 1,
+            "coalesce": True,
         },
     )
 
@@ -207,6 +209,8 @@ def test_start_report_scheduler_registers_anomaly_detection_job(monkeypatch):
             "minutes": 7,
             "id": "parkpilot_anomaly_detection",
             "replace_existing": True,
+            "max_instances": 1,
+            "coalesce": True,
         },
     )
 

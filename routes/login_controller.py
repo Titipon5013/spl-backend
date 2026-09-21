@@ -3,6 +3,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from services.admin_service import AdminService
 from auth.dependencies import create_access_token
 from services.dependencies import get_admin_service
+from helpers.rate_limit import login_rate_limit
 from enums import ApprovalStatus
 
 login_router: APIRouter = APIRouter(tags=["Login"])
@@ -11,6 +12,7 @@ login_router: APIRouter = APIRouter(tags=["Login"])
 def login(
     credentials: OAuth2PasswordRequestForm = Depends(),
     admin_service: AdminService = Depends(get_admin_service),
+    _rate_limit: None = Depends(login_rate_limit),
 ):
     admin = admin_service.authenticate_admin(credentials.username, credentials.password)
 

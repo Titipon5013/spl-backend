@@ -8,6 +8,7 @@ from enums import RoleEnum, ApprovalStatus, AuthProvider
 from auth.utils import authorize_admin_or_self
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+_DUMMY_HASH = pwd_context.hash("dummy-password-for-constant-time")
 
 class AdminService:
     def __init__(self, admin_repo: ImplAdminRepositoryInterface):
@@ -16,13 +17,16 @@ class AdminService:
     def _get_validated_admin(self, email: str) -> AdminOut:
         admin = self.admin_repo.get_admin_by_email(email)
         if not admin:
+            # Run a dummy hash verification so unknown and existing accounts take
+            # comparable time (prevents account-enumeration via response timing).
+            pwd_context.verify("dummy-password-for-constant-time", _DUMMY_HASH)
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
         try:
             return AdminOut.model_validate(admin)
         except ValidationError as e:
             # Log the validation error for debugging
             print(f"Validation Failed for admin {email}: {e}")
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Admin user not found")
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
     def authenticate_admin(self, email, password):
         validated_admin = self._get_validated_admin(email)
@@ -63,6 +67,17 @@ class AdminService:
         authorize_admin_or_self(admin_id, current_user)
 
         update_data = data.model_dump(exclude_unset=True)
+
+        # Changing a role is a privileged operation: require admin authority and
+        # never allow a principal to change its own role (prevents operator -> admin).
+        if "role" in update_data and update_data["role"] is not None:
+            authorize_admin_or_self(admin_id, current_user, require_admin=True)
+            if getattr(current_user, "id", None) == admin_id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="You cannot change your own role",
+                )
+
         if "password" in update_data and update_data["password"]:
             # Ensure only admins or the user themselves can change the password
             if current_user.role != RoleEnum.admin.value:

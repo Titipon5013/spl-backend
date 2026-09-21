@@ -55,6 +55,16 @@ class ImplLicensePlateRequestRepository(LicensePlateRequestRepositoryInferface):
             self.db.commit()
         return to_update
 
+    def get_request_by_id(self, request_id):
+        return self.db.query(LicensePlateRequest).filter(LicensePlateRequest.id == request_id).first()
+
+    def get_plate_by_number(self, plate_number):
+        return self.db.query(LicensePlate).filter(LicensePlate.plate_number == plate_number).first()
+
+    def delete_plate(self, plate: LicensePlate):
+        self.db.delete(plate)
+        self.db.commit()
+
     def add_plate(self, plate: LicensePlate):
         self.db.add(plate)
         self.db.commit()

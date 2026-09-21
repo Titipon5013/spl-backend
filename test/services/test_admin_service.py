@@ -191,7 +191,7 @@ def test_update_admin(admin_service, mock_admin_repo):
     # Setup
     admin_update = AdminUpdate(username="updated", role=RoleEnum.admin)
     current_user = AdminOut(
-        id=1,
+        id=2,
         username="admin",
         email="admin@example.com",
         role=RoleEnum.admin,

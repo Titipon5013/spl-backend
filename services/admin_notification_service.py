@@ -156,13 +156,28 @@ class AdminNotificationService:
 
     def dispatch_new_anomaly_alerts(self) -> dict:
         """Push undelivered open anomalies to unmuted linked admins (hardware-first)."""
+        max_anomalies = int(os.getenv("ANOMALY_DISPATCH_MAX_ANOMALIES", "500"))
+        max_subscriptions = int(os.getenv("ANOMALY_DISPATCH_MAX_SUBSCRIPTIONS", "1000"))
+        max_pushes = int(os.getenv("ANOMALY_DISPATCH_MAX_PUSHES", "500"))
+
         anomalies = (
             self.db.query(SystemAnomaly)
             .filter(SystemAnomaly.resolved_at.is_(None))
             .order_by(SystemAnomaly.detected_at.asc())
+            .limit(max_anomalies)
             .all()
         )
-        subscriptions = self.db.query(AdminAlertSubscription).all()
+        subscriptions = (
+            self.db.query(AdminAlertSubscription).limit(max_subscriptions).all()
+        )
+        # Preload delivered (anomaly, subscription) pairs in one query instead of
+        # issuing a SELECT per pair on every scheduler tick.
+        delivered = {
+            (anomaly_id, line_user_id)
+            for anomaly_id, line_user_id in self.db.query(
+                AdminAlertDelivery.anomaly_id, AdminAlertDelivery.line_user_id
+            ).all()
+        }
         global_allow = pushable_alert_types()
 
         pushed = 0
@@ -170,8 +185,11 @@ class AdminNotificationService:
         skipped_type = 0
         skipped_dup = 0
         failures = 0
+        cap_reached = False
 
         for anomaly in anomalies:
+            if cap_reached:
+                break
             for sub in subscriptions:
                 if sub.muted:
                     skipped_muted += 1
@@ -182,9 +200,13 @@ class AdminNotificationService:
                     skipped_type += 1
                     continue
 
-                if self._already_delivered(anomaly.id, sub.line_user_id):
+                if (anomaly.id, sub.line_user_id) in delivered:
                     skipped_dup += 1
                     continue
+
+                if pushed >= max_pushes:
+                    cap_reached = True
+                    break
 
                 try:
                     self.push_fn(
@@ -202,6 +224,7 @@ class AdminNotificationService:
                 # Persist only successful LINE pushes. Failed attempts stay
                 # undelivered so the next scheduler run can retry them.
                 if self._record_delivery(anomaly.id, sub.line_user_id):
+                    delivered.add((anomaly.id, sub.line_user_id))
                     pushed += 1
                 else:
                     skipped_dup += 1

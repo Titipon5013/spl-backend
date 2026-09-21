@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from auth import dependencies
 from db.models import Admin
 from db.session import get_db
-from enums import ApprovalStatus
+from enums import ApprovalStatus, RoleEnum
 from services.export_service import ExportService
 from services.report_scheduler import trigger_weekly_reports_now
 
@@ -19,6 +19,11 @@ def _require_approved_admin(current_user: Admin = Depends(dependencies.get_curre
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Approved administrator access required",
+        )
+    if current_user.role != RoleEnum.admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Administrator role required",
         )
     return current_user
 
