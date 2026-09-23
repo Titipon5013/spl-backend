@@ -1,5 +1,6 @@
-from fastapi import APIRouter, Depends, File, Form, UploadFile, HTTPException, status, Query
+from fastapi import APIRouter, Depends, File, Form, UploadFile, HTTPException, status, Query, Response
 from pydantic import EmailStr
+from typing import Optional
 from schemas.request import LicensePlateUpdate, LicensePlateCreate
 from db.models import Admin
 from auth import dependencies
@@ -20,6 +21,7 @@ s3_cloudfront = S3CloudFront(
 
 @router.get("/api/plates")
 async def get_plates(
+    response: Response,
     page: int = Query(1, ge=1),
     limit: int = Query(10, ge=1, le=100),
     plate_service: PlateService = Depends(get_plate_service),
@@ -27,7 +29,9 @@ async def get_plates(
 ):
     if not current_user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
-    return plate_service.get_all_plates(current_user, page, limit)
+    items, total = plate_service.get_all_plates(current_user, page, limit)
+    response.headers["X-Total-Count"] = str(total)
+    return items
 
 @router.post("/api/plates")
 def create_plate(
@@ -52,15 +56,18 @@ def create_plate(
 @router.put("/api/plates/{plate_id}")
 async def update_plate(
     plate_id: int,
-    plate_number: str = Form(...),
-    user_email: EmailStr = Form(...),
-    username: str = Form(...),
+    plate_number: Optional[str] = Form(None),
+    user_email: Optional[EmailStr] = Form(None),
+    username: Optional[str] = Form(None),
     file: UploadFile = File(None),
     plate_service: PlateService = Depends(get_plate_service),
     current_user: Admin = Depends(dependencies.get_current_admin_user),
 ):
     if not current_user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+
+    if plate_number is None and user_email is None and username is None and file is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No fields to update")
 
     photo_url = None
     if file:

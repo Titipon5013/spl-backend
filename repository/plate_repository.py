@@ -10,8 +10,14 @@ class PlateRepository:
     def get_plate_with_user(self, page: int = 1, limit: int = 10):
         return self.db.query(LicensePlate).options(joinedload(LicensePlate.user)).offset((page - 1) * limit).limit(limit).all()
 
+    def count_plates(self) -> int:
+        return self.db.query(LicensePlate).count()
+
     def find_plate_by_id(self, plate_id: int):
         return self.db.query(LicensePlate).filter(LicensePlate.id == plate_id).first()
+
+    def find_plate_by_number(self, plate_number: str):
+        return self.db.query(LicensePlate).filter(LicensePlate.plate_number == plate_number).first()
 
     def create_plate(self, payload: LicensePlateCreate):
         user = self.db.query(User).filter(User.email == payload.user_email).first()

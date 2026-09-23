@@ -1,4 +1,4 @@
-from fastapi import Depends, APIRouter, Query
+from fastapi import Depends, APIRouter, Query, Response
 from db.models import Admin
 from schemas.request import LicensePlateRequestWithClient, RequestStatusUpdate
 from auth import dependencies
@@ -11,13 +11,16 @@ request_router: APIRouter = APIRouter(tags=["Registeration requests"])
 
 @request_router.get("/api/requests", response_model=List[LicensePlateRequestWithClient])
 async def list_requests(
+    response: Response,
     status: Optional[RequestStatus] = Query(None),
     page: int = Query(1, ge=1),
     limit: int = Query(10, ge=1, le=100),
     service: PlateRequestService = Depends(get_plate_request_service),
     current_user: Admin = Depends(dependencies.get_current_admin_user),
 ):
-    return service.get_all_plate_requests(current_user, status, page, limit)
+    items, total = service.get_all_plate_requests(current_user, status, page, limit)
+    response.headers["X-Total-Count"] = str(total)
+    return items
 
 # request in context means license plate registration request
 @request_router.put("/api/requests/{request_id}")

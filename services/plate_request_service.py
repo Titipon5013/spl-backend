@@ -8,6 +8,16 @@ from typing import Optional
 import os
 
 
+# Allowed state transitions for a registration request. Decisions are reversible
+# so an operator can revoke an accidental approval or re-approve a rejection,
+# but no-op transitions (e.g. approved -> approved) are rejected.
+_ALLOWED_TRANSITIONS: dict[RequestStatus, set[RequestStatus]] = {
+    RequestStatus.pending: {RequestStatus.approved, RequestStatus.rejected},
+    RequestStatus.approved: {RequestStatus.rejected},
+    RequestStatus.rejected: {RequestStatus.approved},
+}
+
+
 class PlateRequestService:
     def __init__(self, repo: ImplLicensePlateRequestRepository):
         self.repo = repo
@@ -25,7 +35,7 @@ class PlateRequestService:
         request_status: Optional[RequestStatus] = None,
         page: int = 1,
         limit: int = 10
-    ) -> list[LicensePlateRequestWithClient]:
+    ) -> tuple[list[LicensePlateRequestWithClient], int]:
         if current_user.role not in ("admin", "operator"):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -34,7 +44,7 @@ class PlateRequestService:
         
         plate_requests = self.repo.list_requests_with_user(status=request_status, page=page, limit=limit)
         
-        return [
+        items = [
             LicensePlateRequestWithClient(
                 id=req.id, # type: ignore
                 plate_number=req.plate_number, # type: ignore
@@ -45,12 +55,24 @@ class PlateRequestService:
             )
             for req in plate_requests
         ]
+        return items, self.repo.count_requests(status=request_status)
 
     def create_plate_request(self, form_data: dict):
         name = form_data["name"]
         email = form_data["email"]
         plate_number = form_data["plate_number"]
         plate_photo = form_data["plate_photo"]
+
+        if self.repo.get_plate_by_number(plate_number):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="A plate with this number is already registered",
+            )
+        if self.repo.get_pending_request_by_number(plate_number):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="A pending request for this plate number already exists",
+            )
 
         image_url = self.s3_cloudfront.upload_file(
             plate_photo.file,
@@ -80,30 +102,33 @@ class PlateRequestService:
         if not current:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Request not found")
 
-        # Approval is a one-time transition from pending; terminal states are final.
-        if current.status != RequestStatus.pending:
+        target = new_status.status
+        if target not in _ALLOWED_TRANSITIONS.get(current.status, set()):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=f"Request is already '{current.status.value}' and cannot be updated",
+                detail=f"Request cannot move from '{current.status.value}' to '{target.value}'",
             )
 
-        updated_request = self.repo.update_req_status(req_id, new_status)
-
-        if new_status.status == RequestStatus.approved:
-            existing_plate = self.repo.get_plate_by_number(updated_request.plate_number)
+        # Approving must not collide with an existing plate for another record.
+        if target == RequestStatus.approved:
+            existing_plate = self.repo.get_plate_by_number(current.plate_number)
             if existing_plate:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail="A plate with this number already exists",
                 )
+
+        updated_request = self.repo.update_req_status(req_id, new_status)
+
+        if target == RequestStatus.approved:
             license_plate_data = LicensePlate(
                 plate_number=updated_request.plate_number,
                 user_id=updated_request.user_id,
                 plate_image_url=updated_request.plate_image_url,
             )
             self.repo.add_plate(license_plate_data)
-        elif new_status.status == RequestStatus.rejected:
-            # Revoke any plate previously granted for this request.
+        else:
+            # Revoking (or rejecting) removes any plate previously granted.
             existing_plate = self.repo.get_plate_by_number(updated_request.plate_number)
             if existing_plate:
                 self.repo.delete_plate(existing_plate)

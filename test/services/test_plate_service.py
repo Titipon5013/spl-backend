@@ -40,12 +40,14 @@ def test_get_all_plates_unauthorized(mock_plate_repo, unauthorized_user):
 
 def test_create_plate_admin(mock_plate_repo, admin_user):
     service = PlateService(mock_plate_repo)
+    mock_plate_repo.find_plate_by_number.return_value = None
     payload = LicensePlateCreate(user_email="test@example.com", username="test", plate_number="123", plate_image_url="url")
     service.create_plate(admin_user, payload)
     mock_plate_repo.create_plate.assert_called_once_with(payload)
 
 def test_create_plate_operator(mock_plate_repo, operator_user):
     service = PlateService(mock_plate_repo)
+    mock_plate_repo.find_plate_by_number.return_value = None
     payload = LicensePlateCreate(user_email="test@example.com", username="test", plate_number="123", plate_image_url="url")
     service.create_plate(operator_user, payload)
     mock_plate_repo.create_plate.assert_called_once_with(payload)
@@ -61,6 +63,7 @@ def test_update_plate_admin(mock_plate_repo, admin_user):
     service = PlateService(mock_plate_repo)
     plate = MagicMock()
     mock_plate_repo.find_plate_by_id.return_value = plate
+    mock_plate_repo.find_plate_by_number.return_value = None
     payload = LicensePlateUpdate(plate_number="456")
     service.update_plate(1, payload, admin_user)
     mock_plate_repo.update_plate.assert_called_once_with(plate, payload)
@@ -69,6 +72,7 @@ def test_update_plate_operator(mock_plate_repo, operator_user):
     service = PlateService(mock_plate_repo)
     plate = MagicMock()
     mock_plate_repo.find_plate_by_id.return_value = plate
+    mock_plate_repo.find_plate_by_number.return_value = None
     payload = LicensePlateUpdate(plate_number="456")
     service.update_plate(1, payload, operator_user)
     mock_plate_repo.update_plate.assert_called_once_with(plate, payload)

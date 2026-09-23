@@ -47,6 +47,22 @@ class ImplLicensePlateRequestRepository(LicensePlateRequestRepositoryInferface):
             query = query.filter(LicensePlateRequest.status == status)
         
         return query.offset((page - 1) * limit).limit(limit).all()
+
+    def count_requests(self, status: Optional[RequestStatus] = None) -> int:
+        query = self.db.query(LicensePlateRequest)
+        if status:
+            query = query.filter(LicensePlateRequest.status == status)
+        return query.count()
+
+    def get_pending_request_by_number(self, plate_number: str) -> Optional[LicensePlateRequest]:
+        return (
+            self.db.query(LicensePlateRequest)
+            .filter(
+                LicensePlateRequest.plate_number == plate_number,
+                LicensePlateRequest.status == RequestStatus.pending,
+            )
+            .first()
+        )
     
     def update_req_status(self, update_id, update_status: RequestStatusUpdate):
         to_update = self.db.query(LicensePlateRequest).filter(LicensePlateRequest.id == update_id).first()

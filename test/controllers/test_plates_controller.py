@@ -14,15 +14,16 @@ def mock_plate_service():
 def test_get_plates(client, mock_plate_service):
     app.dependency_overrides[get_plate_service] = lambda: mock_plate_service
     app.dependency_overrides[dependencies.get_current_admin_user] = lambda: MagicMock()
-    mock_plate_service.get_all_plates.return_value = [
+    mock_plate_service.get_all_plates.return_value = ([
         LicensePlateResponse(id=1, user_email="test1@example.com", username="test1", plate_number="123", plate_image_url="url1", status=RequestStatus.approved),
         LicensePlateResponse(id=2, user_email="test2@example.com", username="test2", plate_number="456", plate_image_url="url2", status=RequestStatus.pending),
-    ]
+    ], 2)
     
     response = client.get("/api/plates")
     
     assert response.status_code == 200
     assert len(response.json()) == 2
+    assert response.headers["X-Total-Count"] == "2"
     
     app.dependency_overrides = {}
 

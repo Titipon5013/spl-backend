@@ -29,12 +29,13 @@ def test_list_requests_success(mock_plate_request_service, mock_get_current_user
         LicensePlateRequestWithClient(id=1, plate_number="ABC-123", plate_image_url="url1", status=RequestStatus.pending, username="Test User", user_email="test@example.com"),
         LicensePlateRequestWithClient(id=2, plate_number="XYZ-789", plate_image_url="url2", status=RequestStatus.approved, username="Another User", user_email="another@example.com"),
     ]
-    mock_plate_request_service.get_all_plate_requests.return_value = mock_requests
+    mock_plate_request_service.get_all_plate_requests.return_value = (mock_requests, 2)
 
     response = client.get("/api/requests")
     
     assert response.status_code == 200
     assert response.json() == [req.model_dump() for req in mock_requests]
+    assert response.headers["X-Total-Count"] == "2"
     mock_plate_request_service.get_all_plate_requests.assert_called_once_with(mock_get_current_user, None, 1, 10)
 
 def test_list_requests_unauthorized():
