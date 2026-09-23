@@ -176,3 +176,9 @@ class AdminAlertDelivery(Base):
     anomaly_id = Column(Integer, ForeignKey("system_anomalies.id"), nullable=False, index=True)
     line_user_id = Column(String(64), nullable=False, index=True)
     sent_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+class UserPreference(Base):
+    __tablename__ = "user_preferences"
+    line_user_id = Column(String, primary_key=True, index=True)
+    language = Column(String, default="th")
+    updated_at = Column(DateTime, default=datetime.utcnow)

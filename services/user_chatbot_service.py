@@ -1,7 +1,7 @@
 import os
 import math
 import json
-import requests
+import httpx
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from services.analytics_service import AnalyticsService
@@ -49,65 +49,85 @@ class ChatbotService:
                         "required": ["lot_id"]
                     }
                 }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "request_location",
+                    "description": "เรียกใช้เมื่อผู้ใช้ไม่ได้แชร์ GPS แต่บอกใบ้เป็นชื่อสถานที่แทน เช่น 'ฉันอยู่นิมมาน', 'I am at nimman', 'อยู่เซ็นเฟส' เพื่อทำการขอพิกัด GPS",
+                    "parameters": {"type": "object", "properties": {}}
+                }
             }
         ]
 
-    def get_reply(self, user_message: str) -> dict:
-        print(f"Processing message: {user_message}")
-        lang = "th" if self.is_thai(user_message) else "en"
+    async def get_reply(self, user_message: str, user_lang: str = None) -> dict:
+        if user_lang is None:
+            user_lang = "th" if self.is_thai(user_message) else "en"
+
+        print(f"Processing message: {user_message} (Lang: {user_lang})")
         user_message_lower = user_message.strip().lower()
 
-        if user_message_lower == "เช็คที่จอดรถ":
-            return {
-                "type": "text",
-                "text": self.calculate_eta(lot_id="CAMT_01", lang="th")
-            }
 
-        if user_message_lower == "ประเมินเวลาเดินทาง":
-            return {
-                "type": "quick_reply_location",
-                "text": "รบกวนแชร์ตำแหน่งปัจจุบันของคุณ เพื่อให้ระบบคำนวณเวลาเดินทางไปลานจอดรถครับ 📍"
-            }
+        if user_message_lower in ["เช็คที่จอดรถ", "เช็คที่จอด", "check parking", "parking status", "check parking status"]:
+            return {"type": "text", "text": self.calculate_eta(lot_id="CAMT_01", lang=user_lang)}
+
+        if user_message_lower in ["ประเมินเวลาเดินทาง", "eta", "estimate travel time"]:
+            text_prompt = "รบกวนแชร์ตำแหน่งปัจจุบันของคุณ เพื่อให้ระบบคำนวณเวลาเดินทางไปลานจอดรถครับ 📍" if user_lang == "th" else "Please share your current location to calculate the ETA to the parking lot. 📍"
+            return {"type": "quick_reply_location", "text": text_prompt}
 
         negative_keywords = ["เรือ", "เครื่องบิน", "มอไซ", "จักรยาน", "boat", "bike", "motorcycle"]
         if any(word in user_message_lower for word in negative_keywords):
-            reply_text = "ระบบเรารองรับเฉพาะที่จอดรถยนต์นะครับ 😅 สำหรับยานพาหนะอื่นต้องขออภัยด้วยครับ" if lang == "th" else "Parking is for cars only 😅. Sorry for other vehicles."
+            reply_text = "ระบบเรารองรับเฉพาะที่จอดรถยนต์นะครับ 😅 สำหรับยานพาหนะอื่นต้องขออภัยด้วยครับ" if user_lang == "th" else "Parking is for cars only 😅. Sorry for other vehicles."
             return {"type": "text", "text": reply_text}
+
+        location_hints = ["at", "อยู่", "from", "มาจาก", "nimman", "นิมมาน", "เซ็นเฟส"]
+        has_location_hint = any(loc in user_message_lower for loc in location_hints)
 
         parking_keywords = ["จอด", "ว่าง", "รถ", "เต็ม", "ที่", "park", "space", "available", "full", "lot", "camt"]
         is_asking_about_parking = any(keyword in user_message_lower for keyword in parking_keywords)
 
-        if is_asking_about_parking:
-            return {"type": "text", "text": self.calculate_eta(lot_id="CAMT_01", lang=lang)}
+        if is_asking_about_parking and not has_location_hint:
+            return {"type": "text", "text": self.calculate_eta(lot_id="CAMT_01", lang=user_lang)}
 
         if self.agent_api_key:
             try:
-                print("Sending message to OpenRouter Agent...")
+                print("Sending message to Agent API (Async)...")
                 headers = {
                     "Authorization": f"Bearer {self.agent_api_key}",
                     "Content-Type": "application/json"
                 }
 
+                system_prompt = (
+                    "คุณคือผู้ช่วย ParkPilot ตอบคำถามสั้นๆ สุภาพ "
+                    f"ตอบกลับเป็นรหัสภาษานี้เสมอ: '{user_lang}'. "
+                    "1. หากผู้ใช้ระบุสถานที่ที่กำลังอยู่ (เช่น 'I am at nimman', 'อยู่นิมมาน') ให้เรียก Tool 'request_location' ทันที. "
+                    "2. หากเป็นคำถามที่นอกเหนือจากเรื่องที่จอดรถ (Out of scope) ให้ตอบปฏิเสธอย่างสุภาพว่าคุณเป็นผู้ช่วยดูแลที่จอดรถเท่านั้น"
+                )
+
                 payload = {
                     "model": self.agent_model,
                     "messages": [
-                        {"role": "system",
-                         "content": "คุณคือผู้ช่วย ParkPilot ตอบคำถามสั้นๆ สุภาพ ถ้าถามเรื่องที่จอดรถให้เรียกใช้ Tool ทันที"},
+                        {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_message}
                     ],
                     "tools": self._get_tools_schema(),
                     "tool_choice": "auto"
                 }
 
-                response = requests.post(self.agent_endpoint, headers=headers, json=payload, timeout=15)
-                response.raise_for_status()
-                ai_data = response.json()
+                print(f"🎯 DEBUG: Sending to Groq with model -> {self.agent_model}")
+
+                async with httpx.AsyncClient(timeout=15.0) as client:
+                    response = await client.post(self.agent_endpoint, headers=headers, json=payload)
+                    response.raise_for_status()
+                    ai_data = response.json()
 
                 response_message = ai_data['choices'][0]['message']
 
                 if 'tool_calls' in response_message and response_message['tool_calls']:
                     for tool_call in response_message['tool_calls']:
-                        if tool_call['function']['name'] == "check_parking_status":
+                        tool_name = tool_call['function']['name']
+
+                        if tool_name == "check_parking_status":
                             try:
                                 arguments = json.loads(tool_call['function']['arguments'])
                             except json.JSONDecodeError:
@@ -118,18 +138,31 @@ class ChatbotService:
 
                             print(f"Agent routed to check_parking_status (lot_id={lot_id}, travel_mins={travel_mins})")
                             return {"type": "text",
-                                    "text": self.calculate_eta(lot_id=lot_id, lang=lang, travel_mins=travel_mins)}
+                                    "text": self.calculate_eta(lot_id=lot_id, lang=user_lang, travel_mins=travel_mins)}
+
+                        elif tool_name == "request_location":
+                            print("Agent routed to request_location")
+                            text_prompt = "รบกวนแชร์ตำแหน่งปัจจุบันของคุณ เพื่อให้ระบบคำนวณเวลาเดินทางไปลานจอดรถครับ 📍" if user_lang == "th" else "Please share your current location to calculate the ETA to the parking lot. 📍"
+                            return {"type": "quick_reply_location", "text": text_prompt}
 
                 elif 'content' in response_message and response_message['content']:
-                    print("Agent replied normally.")
+                    print("Agent replied normally (Out of scope).")
                     return {"type": "text", "text": response_message['content']}
 
+
+            except httpx.HTTPStatusError as e:
+
+                print(f"Agent Router HTTP Error: {e}")
+
+                print(f"🚨 Groq Error Detail: {e.response.text}")
+
             except Exception as e:
+
                 print(f"Agent Router Error: {e}")
 
         default_th = "ผมคือผู้ช่วย ParkPilot 🚗 รับหน้าที่ดูแลเรื่องที่จอดรถครับ หากต้องการเช็คที่ว่าง หรือแชร์โลเคชั่นให้ประเมินเวลาเดินทาง ถามผมได้เลยครับ!"
         default_en = "I am your parking assistant 🚗. Please ask me about parking availability or share your location for an ETA!"
-        return {"type": "text", "text": default_th if lang == "th" else default_en}
+        return {"type": "text", "text": default_th if user_lang == "th" else default_en}
 
     def calculate_eta(self, lot_id: str = "CAMT_01", lang: str = "th", travel_mins: int = 0) -> str:
         now = datetime.utcnow()

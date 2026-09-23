@@ -14,8 +14,6 @@ from db.models import AdminAlertSubscription
 from services.mcp_client import McpClient, McpClientError
 
 
-# Push only hardware/feed health by default (matches dashboard System Health).
-# stuck_slot per-spot alerts are noisy while the campus feed is paused/unstable.
 DEFAULT_ALERT_TYPES = "device_offline"
 
 
@@ -32,8 +30,6 @@ class AdminChatbotService:
             "AGENT_MODEL", "meta-llama/llama-3.3-70b-instruct"
         )
 
-        # Guardrail: LLMs often mistranslate English "occupancy" into hotel Thai
-        # (เข้าพัก / ผู้เข้าพัก). We ban those tokens so replies stay parking-domain.
         self.system_prompt = (
             "You are a ParkPilot teammate chatting with CAMT parking admins on LINE. "
             "Sound like a real coworker: short, clear, warm — not a corporate bot. "
@@ -237,7 +233,12 @@ class AdminChatbotService:
             "get_dwell_time_stats",
         ):
             args.setdefault("lot_id", "CAMT_01")
-        # Drop empty optional fields so MCP schema defaults apply
+
+        if function_name == "get_system_anomalies":
+            if "limit" not in args or args["limit"] > 10:
+                args["limit"] = 10
+                print("[Guardrail] Enforced limit=10 on get_system_anomalies to protect LLM Token Usage.")
+
         return {k: v for k, v in args.items() if v is not None and v != ""}
 
     async def _execute_tool(self, function_name: str, arguments: dict) -> str:
