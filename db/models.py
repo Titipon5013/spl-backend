@@ -58,7 +58,6 @@ class ParkingSnapshot2(Base):
     processing_time_seconds = Column(Float, nullable=False)
 
 
-# User table
 class User(Base):
     __tablename__ = "users"
 
@@ -70,7 +69,6 @@ class User(Base):
     license_plate_requests = relationship("LicensePlateRequest", back_populates="user", cascade="all, delete-orphan")
 
 
-# License Plates table
 class LicensePlate(Base):
     __tablename__ = "license_plates"
 
@@ -82,7 +80,6 @@ class LicensePlate(Base):
     user = relationship("User", back_populates="license_plates")
 
 
-# License Plate Requests table
 class LicensePlateRequest(Base):
     __tablename__ = "license_plate_requests"
 
@@ -117,9 +114,9 @@ class ParkingEventLog(Base):
 class DeviceHealth(Base):
     __tablename__ = "device_health"
     id = Column(Integer, primary_key=True, index=True)
-    device_id = Column(String(50), index=True, unique=True)  # เช่น "orange_pi_main"
-    device_type = Column(String(20))                         # "board", "camera_1", "camera_2"
-    status = Column(String(20))                              # "online", "offline"
+    device_id = Column(String(50), index=True, unique=True)
+    device_type = Column(String(20))
+    status = Column(String(20))
     last_seen = Column(DateTime, default=datetime.utcnow)
 
 
@@ -132,15 +129,15 @@ class SystemAnomaly(Base):
     __tablename__ = "system_anomalies"
 
     id = Column(Integer, primary_key=True, index=True)
-    anomaly_type = Column(String(30), index=True, nullable=False)  # stuck_slot, pipeline_inactive, device_offline
-    severity = Column(String(10), nullable=False)                  # warning, critical
+    anomaly_type = Column(String(30), index=True, nullable=False)
+    severity = Column(String(10), nullable=False)
     lot_id = Column(String(50), index=True, nullable=True)
     spot_id = Column(String(50), index=True, nullable=True)
     device_id = Column(String(50), index=True, nullable=True)
     details = Column(String(500), nullable=False)
     detected_at = Column(DateTime, default=datetime.utcnow, index=True, nullable=False)
     resolved_at = Column(DateTime, nullable=True)
-    reviewed_by = Column(String(255), nullable=True)                # อีเมลของแอดมินที่ตรวจสอบ
+    reviewed_by = Column(String(255), nullable=True)
     reviewed_at = Column(DateTime, nullable=True)
 
 
@@ -155,7 +152,6 @@ class AdminAlertSubscription(Base):
     id = Column(Integer, primary_key=True, index=True)
     line_user_id = Column(String(64), unique=True, index=True, nullable=False)
     admin_id = Column(Integer, ForeignKey("admins.id"), nullable=True)
-    # CSV of anomaly types; default = hardware only (dashboard System Health style)
     alert_types = Column(
         String(200),
         nullable=False,

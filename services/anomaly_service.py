@@ -7,7 +7,6 @@ from sqlalchemy.orm import Session
 from db.models import DeviceHealth, ParkingEventLog, SystemAnomaly
 from services.analytics_service import AnalyticsService
 
-# ค่าเริ่มต้นของตัวตรวจจับ ปรับได้ผ่าน environment variable
 STUCK_SLOT_HOURS = int(os.getenv("ANOMALY_STUCK_SLOT_HOURS", "12"))
 PIPELINE_INACTIVE_MINUTES = int(os.getenv("ANOMALY_PIPELINE_INACTIVE_MINUTES", "15"))
 DEVICE_OFFLINE_SECONDS = int(os.getenv("ANOMALY_DEVICE_OFFLINE_SECONDS", "300"))
@@ -20,20 +19,10 @@ DEVICE_OFFLINE = "device_offline"
 
 
 class AnomalyService:
-    """ตรวจจับและจัดการความผิดปกติของระบบ (URS-13, URS-14)
-
-    ตัวตรวจจับทำงานแบบ idempotent คือ ความผิดปกติเดียวกันที่ยังไม่หาย
-    จะไม่ถูกบันทึกซ้ำ และจะถูกปิด (resolved) อัตโนมัติเมื่อสถานการณ์กลับสู่ปกติ
-    ทำให้ Feature 4 อ่านตารางนี้ไปแจ้งเตือนได้โดยไม่ส่งซ้ำ
-    """
-
     def __init__(self, db: Session):
         self.db = db
         self.analytics_service = AnalyticsService(db)
 
-    # ========================================================
-    # [1] Detection (เรียกโดย scheduler)
-    # ========================================================
     def detect_anomalies(self) -> dict:
         now = datetime.utcnow()
         active_keys: set[tuple] = set()
@@ -105,7 +94,6 @@ class AnomalyService:
             .first()
         )
 
-        # ยังไม่เคยมีข้อมูลเข้ามาเลย ถือว่ายังไม่ได้ติดตั้ง ไม่ใช่ความผิดปกติ
         if latest is None or latest.timestamp > threshold:
             return []
 
@@ -148,9 +136,6 @@ class AnomalyService:
 
         return findings
 
-    # ========================================================
-    # [2] Retrieval and review (เรียกโดย MCP tools)
-    # ========================================================
     def get_anomalies(
         self,
         anomaly_type: Optional[str] = None,
@@ -190,9 +175,6 @@ class AnomalyService:
         self.db.refresh(anomaly)
         return self._serialize(anomaly)
 
-    # ========================================================
-    # Internal helpers
-    # ========================================================
     def _open_query(self):
         return self.db.query(SystemAnomaly).filter(SystemAnomaly.resolved_at.is_(None))
 

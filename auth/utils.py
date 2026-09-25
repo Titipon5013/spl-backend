@@ -24,7 +24,6 @@ def authorize_admin_or_self(
     """
     Authorizes a request if the user is an admin or accessing their own resource.
     """
-    # This check is to satisfy mypy, but it should not be necessary
     if isinstance(current_user, Admin):
         if current_user.role == RoleEnum.admin.value:
             return

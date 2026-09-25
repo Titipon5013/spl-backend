@@ -25,7 +25,6 @@ def get_weekly_usage(
 ):
     return entry_record_service.get_weekly_usage()
 
-# 👇 เพิ่ม Endpoint POST ตรงนี้สำหรับรับข้อมูลจาก AI Worker
 @router.post("/entry-records", response_model=EntryRecord, status_code=201)
 def create_entry_record(
     plate_number: str = Form(...),
@@ -33,7 +32,6 @@ def create_entry_record(
     entry_record_service: EntryRecordService = Depends(get_entry_record_service),
 ):
     try:
-        # ฟังก์ชัน create_entry_record ใน Service จะต้องทำการอัปโหลดรูปลง S3 แล้วบันทึก URL ลง DB
         return entry_record_service.create_entry_record(
             plate_number=plate_number,
             file=file

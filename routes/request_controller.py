@@ -22,7 +22,6 @@ async def list_requests(
     response.headers["X-Total-Count"] = str(total)
     return items
 
-# request in context means license plate registration request
 @request_router.put("/api/requests/{request_id}")
 def update_request_status(
     request_id: int,

@@ -10,8 +10,6 @@ from starlette.responses import JSONResponse
 from mcp_server.security import client_context, is_authorized
 from mcp_server.tools import register_tools
 
-# Host ที่อนุญาตให้เรียก /mcp ได้ ป้องกัน DNS rebinding
-# ต้องเพิ่ม host ของเซิร์ฟเวอร์ CAMT ตอน deploy ผ่าน MCP_ALLOWED_HOSTS
 _DEFAULT_ALLOWED_HOSTS = "localhost,localhost:8000,127.0.0.1,127.0.0.1:8000"
 
 
@@ -35,11 +33,7 @@ Timestamps are UTC and dates are ISO 8601.\
 mcp = FastMCP(
     name="parkpilot",
     instructions=INSTRUCTIONS,
-    # SRS-30: stateless HTTP compatibility.
     stateless_http=True,
-    # SRS-31: main.py mounts this streamable HTTP app at /mcp.
-    # ถ้าปล่อย default ("/mcp")
-    # เส้นทางจริงจะกลายเป็น /mcp/mcp
     streamable_http_path="/",
     transport_security=TransportSecuritySettings(allowed_hosts=_allowed_hosts()),
 )
@@ -95,7 +89,6 @@ def _build_transport_app():
             await response(scope, receive, send)
             return
 
-        # แยกโควตา rate limit ตามโทเค็นของผู้เรียกแต่ละราย
         with client_context(f"http:{token[:8]}"):
             await inner(scope, receive, send)
 

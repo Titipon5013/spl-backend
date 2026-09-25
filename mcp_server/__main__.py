@@ -15,9 +15,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# stdout เป็นช่องสัญญาณ JSON-RPC ของ MCP อะไรก็ตามที่พิมพ์ลง stdout
-# จะทำให้ client แปลข้อความไม่ได้ ต้องบังคับปิด SQL echo ก่อน import db.session
-# และส่ง log ทั้งหมดไป stderr แทน
 os.environ["SQL_ECHO"] = "false"
 logging.basicConfig(stream=sys.stderr, level=logging.WARNING)
 

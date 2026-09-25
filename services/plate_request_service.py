@@ -8,9 +8,6 @@ from typing import Optional
 import os
 
 
-# Allowed state transitions for a registration request. Decisions are reversible
-# so an operator can revoke an accidental approval or re-approve a rejection,
-# but no-op transitions (e.g. approved -> approved) are rejected.
 _ALLOWED_TRANSITIONS: dict[RequestStatus, set[RequestStatus]] = {
     RequestStatus.pending: {RequestStatus.approved, RequestStatus.rejected},
     RequestStatus.approved: {RequestStatus.rejected},
@@ -109,7 +106,6 @@ class PlateRequestService:
                 detail=f"Request cannot move from '{current.status.value}' to '{target.value}'",
             )
 
-        # Approving must not collide with an existing plate for another record.
         if target == RequestStatus.approved:
             existing_plate = self.repo.get_plate_by_number(current.plate_number)
             if existing_plate:
@@ -128,7 +124,6 @@ class PlateRequestService:
             )
             self.repo.add_plate(license_plate_data)
         else:
-            # Revoking (or rejecting) removes any plate previously granted.
             existing_plate = self.repo.get_plate_by_number(updated_request.plate_number)
             if existing_plate:
                 self.repo.delete_plate(existing_plate)

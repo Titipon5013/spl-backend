@@ -2,9 +2,6 @@ from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime
 
-# ==========================================
-# 1. Heatmap Schemas (คงเดิม)
-# ==========================================
 class HeatmapSpotResponse(BaseModel):
     spot_id: str
     total_events: int
@@ -15,9 +12,6 @@ class HeatmapResponse(BaseModel):
     lot_id: str
     spots: List[HeatmapSpotResponse]
 
-# ==========================================
-# 2. Trends Schemas (คงเดิม)
-# ==========================================
 class TrendDataPoint(BaseModel):
     time_label: str
     average_occupancy: float

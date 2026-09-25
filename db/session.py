@@ -6,8 +6,6 @@ import os
 
 load_dotenv()
 
-# echo=True เขียน SQL ทั้งหมดลง stdout
-# MCP transport แบบ stdio ใช้ stdout ส่ง JSON-RPC จึงต้องปิดได้ (ดู mcp_server/__main__.py)
 SQL_ECHO = os.getenv("SQL_ECHO", "true").lower() not in ("false", "0", "no")
 
 database_url = os.getenv("DATABASE_URL")

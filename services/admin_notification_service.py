@@ -22,8 +22,6 @@ from services.admin_chatbot_service import DEFAULT_ALERT_TYPES
 
 PushFn = Callable[[str, str], None]
 
-# While campus services are paused / noisy, only push hardware-style alerts by default.
-# Override with ADMIN_PUSH_ALERT_TYPES="device_offline,pipeline_inactive" if needed.
 _LEGACY_ALL_TYPES = "stuck_slot,pipeline_inactive,device_offline"
 
 DEVICE_TYPE_LABELS_TH = {
@@ -51,7 +49,6 @@ def _default_push(line_user_id: str, text: str) -> None:
 
 
 def pushable_alert_types() -> set[str]:
-    """Global allow-list for LINE pushes (intersected with each subscription)."""
     raw = os.getenv("ADMIN_PUSH_ALERT_TYPES", DEFAULT_ALERT_TYPES).strip()
     if not raw:
         raw = DEFAULT_ALERT_TYPES
@@ -60,8 +57,6 @@ def pushable_alert_types() -> set[str]:
 
 def _parse_alert_types(raw: Optional[str]) -> set[str]:
     value = (raw or DEFAULT_ALERT_TYPES).strip()
-    # Old links subscribed to every anomaly type; treat that as "use current defaults"
-    # so stuck_slot spam stops without asking everyone to re-link.
     if not value or value == _LEGACY_ALL_TYPES:
         value = DEFAULT_ALERT_TYPES
     return {part.strip() for part in value.split(",") if part.strip()}
@@ -87,7 +82,6 @@ def _minutes_since(detected_at: Optional[datetime]) -> Optional[int]:
 
 
 def format_anomaly_alert(anomaly: SystemAnomaly, db: Optional[Session] = None) -> str:
-    """Human LINE text — hardware-focused, not raw robot fields."""
     minutes = _minutes_since(anomaly.detected_at)
 
     if anomaly.anomaly_type == "device_offline":
@@ -110,7 +104,6 @@ def format_anomaly_alert(anomaly: SystemAnomaly, db: Optional[Session] = None) -
             f"น่าจะเป็นกล้องหรือเส้นทางส่งข้อมูลหลุด — ลองเทียบกับ System Health ครับ"
         )
 
-    # stuck_slot and anything else (normally filtered out of pushes)
     spot = anomaly.spot_id or "?"
     lot = anomaly.lot_id or "?"
     return (
@@ -137,7 +130,6 @@ class AdminNotificationService:
         )
 
     def _record_delivery(self, anomaly_id: int, line_user_id: str) -> bool:
-        """Insert delivery row. Returns False if already delivered (unique conflict)."""
         if self._already_delivered(anomaly_id, line_user_id):
             return False
         self.db.add(
@@ -155,7 +147,6 @@ class AdminNotificationService:
             return False
 
     def dispatch_new_anomaly_alerts(self) -> dict:
-        """Push undelivered open anomalies to unmuted linked admins (hardware-first)."""
         max_anomalies = int(os.getenv("ANOMALY_DISPATCH_MAX_ANOMALIES", "500"))
         max_subscriptions = int(os.getenv("ANOMALY_DISPATCH_MAX_SUBSCRIPTIONS", "1000"))
         max_pushes = int(os.getenv("ANOMALY_DISPATCH_MAX_PUSHES", "500"))
@@ -170,8 +161,6 @@ class AdminNotificationService:
         subscriptions = (
             self.db.query(AdminAlertSubscription).limit(max_subscriptions).all()
         )
-        # Preload delivered (anomaly, subscription) pairs in one query instead of
-        # issuing a SELECT per pair on every scheduler tick.
         delivered = {
             (anomaly_id, line_user_id)
             for anomaly_id, line_user_id in self.db.query(
@@ -221,8 +210,6 @@ class AdminNotificationService:
                     )
                     continue
 
-                # Persist only successful LINE pushes. Failed attempts stay
-                # undelivered so the next scheduler run can retry them.
                 if self._record_delivery(anomaly.id, sub.line_user_id):
                     delivered.add((anomaly.id, sub.line_user_id))
                     pushed += 1

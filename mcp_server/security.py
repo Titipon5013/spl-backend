@@ -9,8 +9,6 @@ from functools import wraps
 
 from mcp.server.fastmcp.exceptions import ToolError
 
-# ผู้เรียกของ request ปัจจุบัน middleware เป็นคนตั้งค่านี้
-# ถ้าเป็นการรันแบบ stdio (เครื่อง local) จะใช้ค่า default
 _STDIO_CLIENT = "stdio-local"
 current_client: ContextVar[str] = ContextVar("current_client", default=_STDIO_CLIENT)
 
@@ -29,8 +27,6 @@ def get_configured_tokens() -> set[str]:
 def is_authorized(token: str | None) -> bool:
     configured = get_configured_tokens()
     if not configured:
-        # ไม่ได้ตั้งโทเค็นไว้ = ปิดกั้นทุกคำขอผ่าน HTTP
-        # ป้องกันการเผลอเปิด /mcp ทิ้งไว้โดยไม่มีการยืนยันตัวตน
         return False
     return token in configured
 

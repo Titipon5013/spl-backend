@@ -53,9 +53,6 @@ def get_occupancy_trends(
     service = AnalyticsService(db)
     return service.get_occupancy_trends(lot_id, start_date, end_date)
 
-# ==========================================
-# 👇 Endpoint หลักสำหรับแสดงผล Real-time บน Dashboard
-# ==========================================
 @router.get("/current")
 def get_current_status(
     lot_id: str = Query("CAMT_02", description="Parking Lot ID"),
@@ -71,7 +68,6 @@ def get_current_status(
     else:
         raise HTTPException(status_code=400, detail="Invalid Parking Lot ID")
 
-    # 1. ดึงภาพรวม
     latest = db.query(model).filter(
         model.lot_id == lot_id
     ).order_by(model.timestamp.desc()).first()
@@ -82,10 +78,8 @@ def get_current_status(
             detail="No real-time data available. Waiting for AI Worker ingestion."
         )
 
-    # 2. กำหนดจำนวนช่องตามลานจอด (CAMT_02 มีพิกัดจริง 34 ช่อง)
     limit_spots = 34 if lot_id == "CAMT_02" else latest.total_spaces
 
-    # 3. ดึงสถานะรายช่องล่าสุด (เพื่อไปวาดกล่องเขียว/แดงบนหน้าเว็บ)
     latest_events = db.query(ParkingEventLog)\
         .filter(ParkingEventLog.lot_id == lot_id)\
         .order_by(desc(ParkingEventLog.timestamp))\
@@ -124,7 +118,6 @@ def sync_parking_data(
     """
     service = AnalyticsService(db)
 
-    # เรียกใช้ฟังก์ชันกระจายยอดที่เราคุยกัน (ต้องไปเขียนเพิ่มใน analytics_service.py)
     try:
         result = service.process_orange_pi_snapshot(payload)
         return {"status": "success", "detail": result}

@@ -61,7 +61,6 @@ def _run_anomaly_detection():
                 f"dup={notify['skipped_dup']}"
             )
     except Exception as e:
-        # ตัวตรวจจับพังต้องไม่ทำให้ scheduler ตายทั้งตัว
         print(f"[anomaly-detector] failed: {e}")
         db.rollback()
     finally:

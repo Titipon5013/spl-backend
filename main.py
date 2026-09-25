@@ -13,7 +13,6 @@ from routes.admin_controller import router as user_router
 from routes.entry_record_controller import router as entry_record_router
 from routes.analytics_controller import router as analytics_router
 from routes.webhook_controller import router as webhook_router
-# 👇 1. เพิ่มการ Import admin_webhook_controller
 from routes.admin_webhook_controller import router as admin_webhook_router
 from routes.oauth_controller import router as oauth_router
 from routes.admin_access_controller import router as admin_access_router
@@ -36,7 +35,6 @@ async def lifespan(app: FastAPI):
     start_report_scheduler()
 
     if http_transport_enabled():
-        # แอปที่ mount ไว้ไม่ได้รับ lifespan ของตัวเอง ต้องรัน session manager ที่นี่
         async with mcp_lifespan():
             yield
     else:
@@ -51,7 +49,6 @@ origins =[
     "http://localhost:8080",
     "http://localhost:5173",
     "http://10.41.11.21:9696"
-    # "http://192.168.0.101:5173"
 ]
 
 app.add_middleware(
@@ -72,7 +69,6 @@ app.include_router(plate_router)
 app.include_router(entry_record_router)
 app.include_router(analytics_router, prefix="/api/analytics", tags=["Analytics Dashboard"])
 app.include_router(webhook_router, prefix="/webhook", tags=["LINE Chatbot"])
-# 👇 2. ลงทะเบียน Router ของ Admin Webhook เข้าสู่แอปพลิเคชัน
 app.include_router(admin_webhook_router, prefix="/webhook", tags=["Admin LINE Chatbot"])
 app.include_router(oauth_router)
 app.include_router(admin_access_router)

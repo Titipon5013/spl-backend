@@ -30,9 +30,6 @@ class AnalyticsService:
         ("camera_4", "cam4", "camera_4_status"),
     )
 
-    # ========================================================
-    # [1] Analytics Serving (ดึงข้อมูลไปโชว์หน้า Dashboard)
-    # ========================================================
     def get_heatmap_data(self, lot_id: str, start_date: Optional[datetime] = None,
                          end_date: Optional[datetime] = None) -> HeatmapResponse:
 
@@ -166,7 +163,6 @@ class AnalyticsService:
             "total_spaces": latest.total_spaces,
             "available_spaces": latest.available_spaces,
             "occupied_spaces": latest.occupied_spaces,
-            # ชื่อคอลัมน์ในตารางสะกดตกตัว n (occupacy_rate) แต่เปิดออกไปข้างนอกให้ถูกต้อง
             "occupancy_rate": round(latest.occupacy_rate, 2),
             "confidence": latest.confidence,
             "timestamp": latest.timestamp.isoformat(),
@@ -260,13 +256,9 @@ class AnalyticsService:
 
         return sum(dwell_minutes) / len(dwell_minutes) if dwell_minutes else 0.0
 
-    # ========================================================
-    # [2] Hardware Ingestion (รับข้อมูลจาก Orange Pi)
-    # ========================================================
     def process_orange_pi_snapshot(self, payload: CameraSnapshotPayload) -> str:
         current_time = datetime.utcnow()
 
-        # 1. อัปเดตตาราง Snapshot ปัจจุบัน
         model = ParkingSnapshot if payload.lot_id == "CAMT_01" else ParkingSnapshot2
         new_snapshot = model(
             lot_id=payload.lot_id,
@@ -280,7 +272,6 @@ class AnalyticsService:
         )
         self.db.add(new_snapshot)
 
-        # 2. ลอจิกกระจายยอดลง 34 ช่อง (Backend Translator)
         if payload.lot_id == "CAMT_02":
             actual_spots = [
                 "A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "A10", "A11", "A12", "A13",
@@ -288,12 +279,10 @@ class AnalyticsService:
                 "C1", "C2", "C3", "C4", "C5", "C6", "C7", "C8", "C9", "C10", "C11", "C12", "C13", "C14", "C15"
             ]
         else:
-            # สำรองไว้กรณีส่ง CAMT_01 เข้ามา (จำลองช่องตาม total_spaces)
             actual_spots = [f"Spot_{str(i).zfill(2)}" for i in range(1, payload.total_spaces + 1)]
 
         new_events = []
         for index, spot in enumerate(actual_spots):
-            # เรียงคิวจอด: ถ้าจำนวนรถจอด 20 คัน index 0-19 จะเป็น True (มีรถ) นอกนั้น False
             is_occupied = True if index < payload.occupied_spaces else False
             new_events.append(
                 ParkingEventLog(
@@ -303,10 +292,8 @@ class AnalyticsService:
                     timestamp=current_time
                 )
             )
-        # ใช้ bulk_save เพื่อให้เซฟ 34 แถวในเสี้ยววินาที ไม่กินเครื่อง
         self.db.bulk_save_objects(new_events)
 
-        # 3. อัปเดต Device Health ควบคู่ไปด้วย (บอกว่าบอร์ดส่งข้อมูลมาแล้ว แปลว่าออนไลน์อยู่)
         device = self.db.query(DeviceHealth).filter(DeviceHealth.device_id == "orange_pi_main").first()
         if not device:
             device = DeviceHealth(device_id="orange_pi_main", device_type="board", status="online", last_seen=current_time)
@@ -315,14 +302,10 @@ class AnalyticsService:
             device.status = "online"
             device.last_seen = current_time
 
-        # กดเซฟทุกอย่างลง DB พร้อมกัน
         self.db.commit()
 
         return f"Processed snapshot for {payload.lot_id}, distributed to {len(actual_spots)} spots, and updated board health."
 
-    # ========================================================
-    # [3] System Health Monitoring (เช็คสถานะอุปกรณ์)
-    # ========================================================
     def update_hardware_heartbeat(self, payload: DeviceHeartbeatPayload) -> bool:
         try:
             self._upsert_device_health("board", payload.board_id, payload.board_status)
@@ -355,7 +338,6 @@ class AnalyticsService:
             if not dev:
                 return DeviceStatus(status="offline", last_seen=None)
 
-            # 💡 ตรรกะสำคัญ: ถ้าข้อมูลอัปเดตล่าสุดนานเกิน 5 นาที (300 วินาที) ให้ถือว่า "Offline" อัตโนมัติ
             if dev.last_seen and (datetime.utcnow() - dev.last_seen).total_seconds() > 300:
                 return DeviceStatus(status="offline", last_seen=dev.last_seen)
 
@@ -368,13 +350,12 @@ class AnalyticsService:
         cam4_stat = get_device_status("camera_4")
         camera_stats = (cam1_stat, cam2_stat, cam3_stat, cam4_stat)
 
-        # ประเมินสถานะภาพรวมของระบบ (System Status)
         if board_stat.status == "offline":
-            sys_status = "Critical"  # บอร์ดดับ = พังทั้งระบบ
+            sys_status = "Critical"
         elif any(camera.status == "offline" for camera in camera_stats):
-            sys_status = "Degraded"  # บอร์ดติด แต่กล้องตัวใดตัวหนึ่งดับ
+            sys_status = "Degraded"
         else:
-            sys_status = "Healthy"  # ปกติดีทุกตัว
+            sys_status = "Healthy"
 
         uptime = round(
             (

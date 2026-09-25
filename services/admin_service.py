@@ -17,14 +17,11 @@ class AdminService:
     def _get_validated_admin(self, email: str) -> AdminOut:
         admin = self.admin_repo.get_admin_by_email(email)
         if not admin:
-            # Run a dummy hash verification so unknown and existing accounts take
-            # comparable time (prevents account-enumeration via response timing).
             pwd_context.verify("dummy-password-for-constant-time", _DUMMY_HASH)
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
         try:
             return AdminOut.model_validate(admin)
         except ValidationError as e:
-            # Log the validation error for debugging
             print(f"Validation Failed for admin {email}: {e}")
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
@@ -68,8 +65,6 @@ class AdminService:
 
         update_data = data.model_dump(exclude_unset=True)
 
-        # Changing a role is a privileged operation: require admin authority and
-        # never allow a principal to change its own role (prevents operator -> admin).
         if "role" in update_data and update_data["role"] is not None:
             authorize_admin_or_self(admin_id, current_user, require_admin=True)
             if getattr(current_user, "id", None) == admin_id:
@@ -79,7 +74,6 @@ class AdminService:
                 )
 
         if "password" in update_data and update_data["password"]:
-            # Ensure only admins or the user themselves can change the password
             if current_user.role != RoleEnum.admin.value:
                 if current_user.id != admin_id:
                     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to change password")

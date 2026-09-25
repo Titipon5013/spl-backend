@@ -86,7 +86,6 @@ class McpClient:
         except McpClientError:
             raise
         except Exception as exc:
-            # FastMCP raises ToolError for validation / domain errors
             raise McpClientError(str(exc)) from exc
 
     async def _call_http(self, name: str, arguments: dict[str, Any]) -> dict:
@@ -111,7 +110,6 @@ class McpClient:
                     await session.initialize()
                     result = await session.call_tool(name, arguments)
 
-                    # เช็ค error แบบปลอดภัย
                     if getattr(result, "isError", False):
                         parts = []
                         for block in result.content or []:
