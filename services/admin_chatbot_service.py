@@ -24,10 +24,10 @@ class AdminChatbotService:
 
         self.api_key = os.getenv("CLOUD_API_KEY")
         self.endpoint = os.getenv(
-            "AGENT_ENDPOINT", "https://openrouter.ai/api/v1/chat/completions"
+            "AGENT_ENDPOINT", "https://api.groq.com/openai/v1/chat/completions"
         )
         self.model = os.getenv(
-            "AGENT_MODEL", "meta-llama/llama-3.3-70b-instruct"
+            "AGENT_MODEL", "openai/gpt-oss-20b"
         )
 
         self.system_prompt = (
