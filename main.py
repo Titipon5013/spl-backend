@@ -45,10 +45,16 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
-origins =[
+default_origins = [
     "http://localhost:8080",
     "http://localhost:5173",
-    "http://10.41.11.21:9696"
+    "http://10.41.11.21:9696",
+    "https://spl.camt.cmu.ac.th",
+]
+origins = [
+    origin.strip()
+    for origin in os.getenv("CORS_ORIGINS", ",".join(default_origins)).split(",")
+    if origin.strip()
 ]
 
 app.add_middleware(
