@@ -353,8 +353,8 @@ class AnalyticsService:
             self.db.add(new_device)
 
     def get_system_health_status(self, lot_id: str) -> SystemHealthResponse:
-        def get_device_status(dev_type: str) -> DeviceStatus:
-            dev = self.db.query(DeviceHealth).filter(DeviceHealth.device_type == dev_type).first()
+        def get_device_status(dev_id: str) -> DeviceStatus:
+            dev = self.db.query(DeviceHealth).filter(DeviceHealth.device_id == dev_id).first()
             if not dev:
                 return DeviceStatus(status="offline", last_seen=None)
 
@@ -363,11 +363,12 @@ class AnalyticsService:
 
             return DeviceStatus(status=dev.status, last_seen=dev.last_seen)
 
-        board_stat = get_device_status("board")
-        cam1_stat = get_device_status("camera_1")
-        cam2_stat = get_device_status("camera_2")
-        cam3_stat = get_device_status("camera_3")
-        cam4_stat = get_device_status("camera_4")
+        board_stat = get_device_status("ORANGE_PI_MAIN")
+        cam1_stat = get_device_status("CAMT_01")
+        cam2_stat = get_device_status("CAMT_02")
+        cam3_stat = get_device_status("CAMT_03")
+        cam4_stat = get_device_status("CAMT_04")
+
         camera_stats = (cam1_stat, cam2_stat, cam3_stat, cam4_stat)
 
         if board_stat.status == "offline":
@@ -379,8 +380,8 @@ class AnalyticsService:
 
         uptime = round(
             (
-                self._device_uptime_score(board_stat)
-                + sum(self._device_uptime_score(camera) for camera in camera_stats)
+                    self._device_uptime_score(board_stat)
+                    + sum(self._device_uptime_score(camera) for camera in camera_stats)
             )
             / 5,
             2,
@@ -397,7 +398,7 @@ class AnalyticsService:
         )
 
     def _device_uptime_score(self, device: DeviceStatus) -> float:
-        if device.status != "online" or not device.last_seen:
+        if device.status not in ["online", "healthy"] or not device.last_seen:
             return 0.0
         age_seconds = (datetime.utcnow() - device.last_seen).total_seconds()
         if age_seconds > 300:

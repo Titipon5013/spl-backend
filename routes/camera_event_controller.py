@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 
 from services.dependencies import get_db
-from db.models import ParkingSnapshot, ParkingSnapshot2, ParkingEventLog
+from db.models import ParkingSnapshot, ParkingSnapshot2, ParkingEventLog, DeviceHealth
 
 from services.analytics_service import AnalyticsService
 from schemas.analytics import DeviceHeartbeatPayload
@@ -71,8 +71,26 @@ def receive_camera_events(payload: CameraEventPayload, db: Session = Depends(get
             )
             db.add(new_event_log)
 
+            camera_health = db.query(DeviceHealth).filter(DeviceHealth.device_id == lot_id).first()
+            if not camera_health:
+                camera_health = DeviceHealth(device_id=lot_id, device_type="camera", status="online",
+                                             last_seen=current_time)
+                db.add(camera_health)
+            else:
+                camera_health.status = "online"
+                camera_health.last_seen = current_time
+
+            pi_health = db.query(DeviceHealth).filter(DeviceHealth.device_id == "ORANGE_PI_MAIN").first()
+            if not pi_health:
+                pi_health = DeviceHealth(device_id="ORANGE_PI_MAIN", device_type="board", status="online",
+                                         last_seen=current_time)
+                db.add(pi_health)
+            else:
+                pi_health.status = "online"
+                pi_health.last_seen = current_time
+
         db.commit()
-        return {"message": f"Successfully logged data for {lot_id}"}
+        return {"message": f"Successfully logged data and updated health for {lot_id}"}
 
     except Exception as e:
         db.rollback()
