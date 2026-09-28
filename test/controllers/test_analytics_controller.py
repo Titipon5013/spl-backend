@@ -70,6 +70,50 @@ def test_get_kpis_with_events(client, db_session):
     assert data["avg_dwell_time_minutes"] == 20.0
 
 
+def test_get_kpis_counts_vehicles_per_lot_once_entries_are_tagged(client, db_session):
+    now = datetime.utcnow()
+    db_session.add(
+        EntryRecord(
+            plate_number="C1-001",
+            plate_image_url="url",
+            timestamp=now - timedelta(hours=1),
+            lot_id="CAMT_01",
+        )
+    )
+    db_session.add(
+        EntryRecord(
+            plate_number="C1-002",
+            plate_image_url="url",
+            timestamp=now - timedelta(hours=2),
+            lot_id="CAMT_01",
+        )
+    )
+    db_session.add(
+        EntryRecord(
+            plate_number="C2-001",
+            plate_image_url="url",
+            timestamp=now - timedelta(hours=3),
+            lot_id="CAMT_02",
+        )
+    )
+    db_session.commit()
+
+    def fetch_kpis(lot_id):
+        response = client.get(
+            "/api/analytics/kpis",
+            params={
+                "lot_id": lot_id,
+                "start_date": (now - timedelta(days=1)).isoformat(),
+                "end_date": now.isoformat(),
+            },
+        )
+        assert response.status_code == 200
+        return response.json()
+
+    assert fetch_kpis("CAMT_01")["vehicle_count"] == 2
+    assert fetch_kpis("CAMT_02")["vehicle_count"] == 1
+
+
 def test_get_occupancy_trends(client, db_session):
     now = datetime.utcnow().replace(minute=15, second=0, microsecond=0)
     db_session.add_all(

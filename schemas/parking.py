@@ -40,3 +40,4 @@ class LicensePlatePayload(BaseModel):
     plate_number: str
     plate_image_url: str
     timestamp: Optional[datetime] = None
+    lot_id: Optional[str] = None  # เพิ่มภายหลัง: edge เก่าที่ไม่ส่งค่านี้ยังใช้ได้ (NULL)

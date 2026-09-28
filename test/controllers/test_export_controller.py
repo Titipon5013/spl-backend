@@ -114,15 +114,15 @@ def test_trigger_weekly_report(mock_run, client, approved_admin):
 def test_weekly_scheduler_dispatches_reports_to_approved_admins(db_session, approved_admin):
     from services import report_scheduler
 
-    def fake_export(lot_id, _start_date, _end_date, export_format):
+    def fake_combined(lot_ids, _start_date, _end_date, export_format, kpis_by_lot=None):
         if export_format == "csv":
-            return (b"csv-report", f"parkpilot-{lot_id}.csv", "text/csv")
-        return (b"%PDF-report", f"parkpilot-{lot_id}.pdf", "application/pdf")
+            return (b"csv-report", "parkpilot-weekly.csv", "text/csv")
+        return (b"%PDF-report", "parkpilot-weekly.pdf", "application/pdf")
 
     with patch.object(
         report_scheduler.ExportService,
-        "export_analytics",
-        side_effect=fake_export,
+        "export_combined_analytics",
+        side_effect=fake_combined,
     ) as mock_export, patch.object(
         report_scheduler.EmailService,
         "send_weekly_report",
@@ -130,17 +130,20 @@ def test_weekly_scheduler_dispatches_reports_to_approved_admins(db_session, appr
     ) as mock_send:
         summary = report_scheduler._run_weekly_reports()
 
-    assert mock_export.call_count == 4
-    assert mock_send.call_count == 2
-    calls = {call.args[1]: call for call in mock_send.call_args_list}
-    assert set(calls) == {"CAMT_01", "CAMT_02"}
-    camt_01 = calls["CAMT_01"]
-    assert camt_01.args[0] == approved_admin.email
-    assert camt_01.args[4] == b"csv-report"
-    assert camt_01.args[5] == b"%PDF-report"
-    assert camt_01.kwargs["csv_filename"] == "parkpilot-CAMT_01.csv"
-    assert camt_01.kwargs["pdf_filename"] == "parkpilot-CAMT_01.pdf"
-    assert summary == {"admins": 1, "emails_sent": 2, "emails_failed": 0, "errors": []}
+    assert mock_export.call_count == 2
+    combined_call = mock_export.call_args_list[0]
+    assert combined_call.args[0] == ["CAMT_01", "CAMT_02"]
+    assert set(combined_call.kwargs["kpis_by_lot"]) == {"CAMT_01", "CAMT_02"}
+
+    # one combined email per admin, both lots inside the same CSV/PDF
+    assert mock_send.call_count == 1
+    send_args, send_kwargs = mock_send.call_args
+    assert send_args[0] == approved_admin.email
+    assert send_kwargs["attachments"] == [
+        ("parkpilot-weekly.csv", b"csv-report"),
+        ("parkpilot-weekly.pdf", b"%PDF-report"),
+    ]
+    assert summary == {"admins": 1, "emails_sent": 1, "emails_failed": 0, "errors": []}
 
 
 def test_start_report_scheduler_registers_weekly_cron_job(monkeypatch):

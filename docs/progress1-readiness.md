@@ -98,7 +98,8 @@ Known non-blocking warning: the production JavaScript bundle is larger than Vite
    - `test_weekly_scheduler_dispatches_reports_to_approved_admins`: weekly report dispatch generates CSV/PDF exports and sends them to approved administrators.
    - `test_start_report_scheduler_registers_weekly_cron_job`: scheduler registers the configured weekly cron job.
    - `test_trigger_weekly_report`: manual endpoint `POST /api/reports/trigger` calls report dispatch.
-   - `test/services/test_weekly_report_e2e.py`: real end-to-end dispatch over SMTP into a local capture server — verifies approved-admin-only delivery, lot-labelled subjects/attachments, seeded KPI/trend values in the CSV, valid PDF, and that SMTP failures are reported without aborting the run.
+   - `test/services/test_weekly_report_e2e.py`: real end-to-end dispatch over SMTP into a local capture server — verifies approved-admin-only delivery, a single combined email per admin whose CSV/PDF contain a clearly separated section per lot, seeded KPI/trend values, valid PDF, that SMTP failures are reported without aborting the run, and that each run upserts one `weekly_lot_metrics` row per lot for the last completed calendar week (Mon–Sun UTC) with per-lot vehicle counts.
+   - `test/services/test_weekly_metrics_service.py`: week-window calculation (Monday/midweek/Sunday) and idempotent upsert of the weekly summary.
 
 ## Acceptance Position
 
@@ -121,7 +122,7 @@ The backend supports both direct edge posting and backend-pulled edge JSON inges
 
 2. Make database setup reproducible.
 
-   Progress I admin access columns are currently documented in `scripts/add_progress1_admin_columns.sql`. Before deployment or handoff, either convert the SQL into an Alembic migration or include the SQL script explicitly in the deployment steps.
+   Progress I admin access columns are currently documented in `scripts/add_progress1_admin_columns.sql`. The weekly-summary table and `entry_records.lot_id` column added for F5 are in `scripts/add_progress1_weekly_metrics.sql`. Before deployment or handoff, either convert these SQL scripts into Alembic migrations or include them explicitly in the deployment steps.
 
 3. Capture real or adapter-based edge ingestion evidence.
 

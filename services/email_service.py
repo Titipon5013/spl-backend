@@ -37,28 +37,21 @@ class EmailService:
     def send_weekly_report(
         self,
         recipient: str,
-        lot_id: str,
         start_date: datetime,
         end_date: datetime,
-        csv_bytes: bytes,
-        pdf_bytes: bytes,
-        csv_filename: str = "weekly-report.csv",
-        pdf_filename: str = "weekly-report.pdf",
+        attachments: list[tuple[str, bytes]],
     ) -> bool:
         period = f"{start_date.date()} to {end_date.date()}"
         body = (
-            f"ParkPilot weekly performance report for {lot_id}.\n"
+            "ParkPilot weekly performance report for all parking lots.\n"
             f"Period: {period}\n\n"
-            "Attached: occupancy trends, KPIs, and heatmap data (CSV and PDF).\n"
+            "Attached: per-lot occupancy trends, KPIs, and heatmap data (CSV and PDF).\n"
         )
         return self._send_email(
             recipient,
-            f"ParkPilot Weekly Report — {lot_id} ({period})",
+            f"ParkPilot Weekly Report — All Lots ({period})",
             body,
-            attachments=[
-                (csv_filename, csv_bytes),
-                (pdf_filename, pdf_bytes),
-            ],
+            attachments=attachments,
         )
 
     def _generate_qr_png(self, url: str) -> bytes:

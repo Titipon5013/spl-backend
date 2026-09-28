@@ -100,6 +100,8 @@ class EntryRecord(Base):
     plate_number = Column(String, nullable=False)
     plate_image_url = Column(String, nullable=False)
     timestamp = Column(DateTime, default=datetime.utcnow, nullable=False)
+    # ลานที่รถคันนี้เข้าอยู่ (NULL = ข้อมูลเก่า/edge ยังไม่ส่ง lot มาให้)
+    lot_id = Column(String(50), index=True, nullable=True)
 
 
 class ParkingEventLog(Base):
@@ -178,3 +180,27 @@ class UserPreference(Base):
     line_user_id = Column(String, primary_key=True, index=True)
     language = Column(String, default="th")
     updated_at = Column(DateTime, default=datetime.utcnow)
+
+
+class WeeklyLotMetric(Base):
+    """Feature 5: สรุปรายสัปดาห์ต่อลาน จัดเก็บก่อนส่งอีเมลรายงาน
+
+    หนึ่งแถวต่อหนึ่งลานต่อหนึ่งสัปดาห์ (จันทร์ 00:00 UTC → จันทร์ถัดไป 00:00 UTC,
+    week_end เป็นแบบ exclusive). เขียนแบบ upsert ด้วย unique constraint
+    ทำให้ trigger ซ้ำ/retry ไม่สร้างข้อมูลเบิ้ล
+    """
+
+    __tablename__ = "weekly_lot_metrics"
+    __table_args__ = (
+        UniqueConstraint("lot_id", "week_start", name="uq_weekly_lot_metric"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    lot_id = Column(String(50), nullable=False, index=True)
+    week_start = Column(DateTime, nullable=False, index=True)
+    week_end = Column(DateTime, nullable=False)
+    utilization_percentage = Column(Float, nullable=False, default=0.0)
+    peak_occupancy = Column(Integer, nullable=False, default=0)
+    vehicle_count = Column(Integer, nullable=False, default=0)
+    avg_dwell_time_minutes = Column(Float, nullable=False, default=0.0)
+    generated_at = Column(DateTime, default=datetime.utcnow, nullable=False)

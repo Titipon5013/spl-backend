@@ -12,9 +12,17 @@ import socketserver
 import threading
 from datetime import datetime, timedelta
 
-from db.models import Admin, EntryRecord, ParkingEventLog, ParkingSnapshot, ParkingSnapshot2
+from db.models import (
+    Admin,
+    EntryRecord,
+    ParkingEventLog,
+    ParkingSnapshot,
+    ParkingSnapshot2,
+    WeeklyLotMetric,
+)
 from enums import ApprovalStatus, AuthProvider, RoleEnum
 from services import email_service, report_scheduler
+from services.weekly_metrics_service import last_completed_utc_week
 
 
 class SmtpSink:
@@ -98,11 +106,12 @@ def _add_admin(db_session, username, address, approval_status):
 
 
 def _seed_analytics(db_session):
-    now = datetime.utcnow()
+    # ข้อมูลต้องอยู่ใน "สัปดาห์ที่เพิ่งจบ" (จันทร์-อาทิตย์ UTC) จึงจะถูกนับในรายงาน
+    _, week_end = last_completed_utc_week()
     db_session.add(
         ParkingSnapshot(
             lot_id="CAMT_01",
-            timestamp=now - timedelta(hours=1),
+            timestamp=week_end - timedelta(days=1, hours=1),
             available_spaces=6,
             total_spaces=30,
             occupied_spaces=24,
@@ -114,7 +123,7 @@ def _seed_analytics(db_session):
     db_session.add(
         ParkingSnapshot(
             lot_id="CAMT_01",
-            timestamp=now - timedelta(hours=2),
+            timestamp=week_end - timedelta(days=2),
             available_spaces=12,
             total_spaces=30,
             occupied_spaces=18,
@@ -126,7 +135,7 @@ def _seed_analytics(db_session):
     db_session.add(
         ParkingSnapshot2(
             lot_id="CAMT_02",
-            timestamp=now - timedelta(hours=1),
+            timestamp=week_end - timedelta(days=1),
             available_spaces=20,
             total_spaces=30,
             occupied_spaces=10,
@@ -135,20 +144,45 @@ def _seed_analytics(db_session):
             processing_time_seconds=0.1,
         )
     )
-    for hours in (1, 2, 3):
-        db_session.add(
-            EntryRecord(
-                plate_number=f"ABC{hours}",
-                plate_image_url="url",
-                timestamp=now - timedelta(hours=hours),
-            )
+    # CAMT_01: 2 คัน, CAMT_02: 1 คัน ต่อสัปดาห์ + 1 คันนอกสัปดาห์ที่ต้องไม่ถูกนับ
+    db_session.add(
+        EntryRecord(
+            plate_number="ABC1",
+            plate_image_url="url",
+            timestamp=week_end - timedelta(days=2),
+            lot_id="CAMT_01",
         )
+    )
+    db_session.add(
+        EntryRecord(
+            plate_number="ABC2",
+            plate_image_url="url",
+            timestamp=week_end - timedelta(days=1),
+            lot_id="CAMT_01",
+        )
+    )
+    db_session.add(
+        EntryRecord(
+            plate_number="ABC3",
+            plate_image_url="url",
+            timestamp=week_end - timedelta(days=1),
+            lot_id="CAMT_02",
+        )
+    )
+    db_session.add(
+        EntryRecord(
+            plate_number="NEXT1",
+            plate_image_url="url",
+            timestamp=week_end + timedelta(hours=1),
+            lot_id="CAMT_01",
+        )
+    )
     db_session.add(
         ParkingEventLog(
             lot_id="CAMT_01",
             spot_id="A1",
             is_occupied=True,
-            timestamp=now - timedelta(hours=3),
+            timestamp=week_end - timedelta(days=2, hours=1),
         )
     )
     db_session.add(
@@ -156,7 +190,7 @@ def _seed_analytics(db_session):
             lot_id="CAMT_01",
             spot_id="A1",
             is_occupied=False,
-            timestamp=now - timedelta(hours=2),
+            timestamp=week_end - timedelta(days=2),
         )
     )
     db_session.commit()
@@ -181,6 +215,20 @@ def _attachment_texts(message):
     return attachments
 
 
+def _csv_sections(csv_text):
+    """แยก CSV ที่รวมหลายลาน เป็น dict: lot_id -> list ของแถวใน section นั้น"""
+    sections = {}
+    current = None
+    for line in csv_text.splitlines():
+        parts = line.split(",")
+        if len(parts) == 2 and parts[0] == "Lot ID":
+            current = parts[1]
+            sections[current] = []
+        elif current is not None:
+            sections[current].append(tuple(parts))
+    return sections
+
+
 def _body_text(message):
     for part in message.walk():
         if part.get_content_type() == "text/plain":
@@ -197,47 +245,71 @@ def test_weekly_reports_reach_approved_admin_over_real_smtp(db_session, monkeypa
         _point_email_service_at(monkeypatch, sink.port)
         summary = report_scheduler._run_weekly_reports()
 
-    assert summary == {"admins": 1, "emails_sent": 2, "emails_failed": 0, "errors": []}
-    assert len(sink.messages) == 2
+    assert summary == {"admins": 1, "emails_sent": 1, "emails_failed": 0, "errors": []}
+    # one combined email per admin
+    assert len(sink.messages) == 1
     assert all("weekly@example.com" in rcpt for rcpt in sink.recipients)
     assert not any("pending@example.com" in rcpt for rcpt in sink.recipients)
 
-    by_lot = {}
-    for message in sink.parsed():
-        assert message["To"] == "weekly@example.com"
-        attachments = _attachment_texts(message)
-        csv_name = next(name for name in attachments if name.endswith(".csv"))
-        pdf_name = next(name for name in attachments if name.endswith(".pdf"))
-        csv_text = attachments[csv_name].decode()
-        lot_id = next(
-            line.split(",")[1] for line in csv_text.splitlines() if line.startswith("Lot ID")
-        )
-        by_lot[lot_id] = (message, attachments, csv_text)
-        assert lot_id in message["Subject"]
-        assert lot_id in csv_name
-        assert attachments[pdf_name].startswith(b"%PDF")
+    message = sink.parsed()[0]
+    assert message["To"] == "weekly@example.com"
+    assert "All Lots" in message["Subject"]
+    assert "2026-" in message["Subject"]
+    assert "all parking lots" in _body_text(message)
 
-    camt_01_message, camt_01_attachments, camt_01_csv = by_lot["CAMT_01"]
-    assert "CAMT_01" in _body_text(camt_01_message)
-    assert ("Utilization %", "70.0") in [
-        tuple(line.split(",")) for line in camt_01_csv.splitlines()
-    ]
-    assert ("Peak Occupancy", "24") in [
-        tuple(line.split(",")) for line in camt_01_csv.splitlines()
-    ]
-    assert ("Vehicle Count", "3") in [
-        tuple(line.split(",")) for line in camt_01_csv.splitlines()
-    ]
-    assert ("Avg Dwell Time (min)", "60.0") in [
-        tuple(line.split(",")) for line in camt_01_csv.splitlines()
-    ]
-    assert any("CAMT_01" in name for name in camt_01_attachments)
+    attachments = _attachment_texts(message)
+    csv_name = next(name for name in attachments if name.endswith(".csv"))
+    pdf_name = next(name for name in attachments if name.endswith(".pdf"))
+    assert csv_name.startswith("parkpilot-weekly-")
+    assert pdf_name.startswith("parkpilot-weekly-")
+    assert attachments[pdf_name].startswith(b"%PDF")
 
-    camt_02_message, _, camt_02_csv = by_lot["CAMT_02"]
-    assert "CAMT_02" in camt_02_message["Subject"]
-    assert ("Utilization %", "33.33") in [
-        tuple(line.split(",")) for line in camt_02_csv.splitlines()
-    ]
+    sections = _csv_sections(attachments[csv_name].decode())
+    assert set(sections) == {"CAMT_01", "CAMT_02"}
+
+    camt_01_rows = sections["CAMT_01"]
+    assert ("Utilization %", "70.0") in camt_01_rows
+    assert ("Peak Occupancy", "24") in camt_01_rows
+    assert ("Vehicle Count", "2") in camt_01_rows
+    assert ("Avg Dwell Time (min)", "60.0") in camt_01_rows
+    assert ("A1", "50.0", "2") in camt_01_rows
+
+    camt_02_rows = sections["CAMT_02"]
+    assert ("Utilization %", "33.33") in camt_02_rows
+    assert ("Vehicle Count", "1") in camt_02_rows
+
+    # record รวมรายสัปดาห์ถูกจัดเก็บก่อนส่งเมล และตรงกับ KPI ใน CSV
+    week_start, week_end = last_completed_utc_week()
+    rows = db_session.query(WeeklyLotMetric).order_by(WeeklyLotMetric.lot_id).all()
+    assert len(rows) == 2
+    stored = {row.lot_id: row for row in rows}
+    camt_01_row = stored["CAMT_01"]
+    assert camt_01_row.week_start == week_start
+    assert camt_01_row.week_end == week_end
+    assert camt_01_row.utilization_percentage == 70.0
+    assert camt_01_row.peak_occupancy == 24
+    assert camt_01_row.vehicle_count == 2
+    assert camt_01_row.avg_dwell_time_minutes == 60.0
+    assert stored["CAMT_02"].vehicle_count == 1
+
+
+def test_weekly_summary_is_upserted_and_covers_last_calendar_week(db_session, monkeypatch):
+    _add_admin(db_session, "approved", "weekly@example.com", ApprovalStatus.approved)
+    _seed_analytics(db_session)
+
+    with SmtpSink() as sink:
+        _point_email_service_at(monkeypatch, sink.port)
+        first = report_scheduler._run_weekly_reports()
+        second = report_scheduler._run_weekly_reports()
+
+    assert first["emails_sent"] == 1
+    assert second["emails_sent"] == 1
+    assert len(sink.messages) == 2
+    # trigger ซ้ำต้อง update แถวเดิม ไม่สร้างใหม่
+    assert db_session.query(WeeklyLotMetric).count() == 2
+    week_start, week_end = last_completed_utc_week()
+    for row in db_session.query(WeeklyLotMetric).all():
+        assert (row.week_start, row.week_end) == (week_start, week_end)
 
 
 def test_weekly_report_smtp_failure_is_reported_not_raised(db_session, monkeypatch):
@@ -254,5 +326,5 @@ def test_weekly_report_smtp_failure_is_reported_not_raised(db_session, monkeypat
 
     assert summary["admins"] == 1
     assert summary["emails_sent"] == 0
-    assert summary["emails_failed"] == 2
-    assert len(summary["errors"]) == 2
+    assert summary["emails_failed"] == 1
+    assert len(summary["errors"]) == 1

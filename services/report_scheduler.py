@@ -10,6 +10,12 @@ from enums import ApprovalStatus
 from services.anomaly_service import AnomalyService
 from services.email_service import EmailService
 from services.export_service import ExportService
+from services.weekly_metrics_service import (
+    LOT_IDS,
+    build_lot_metrics,
+    last_completed_utc_week,
+    record_weekly_metrics,
+)
 
 _scheduler: BackgroundScheduler | None = None
 
@@ -20,8 +26,9 @@ def _run_weekly_reports() -> dict:
     try:
         export_service = ExportService(db)
         email_service = EmailService()
-        end_date = datetime.utcnow()
-        start_date = end_date - timedelta(days=7)
+        week_start, week_end = last_completed_utc_week()
+        # ใช้ window แบบ inclusive ถึงวินาทีสุดท้ายของวันอาทิตย์ กันนับซ้ำข้ามสัปดาห์
+        report_end = week_end - timedelta(seconds=1)
         approved_admins = (
             db.query(Admin)
             .filter(Admin.approval_status == ApprovalStatus.approved)
@@ -29,42 +36,64 @@ def _run_weekly_reports() -> dict:
         )
         summary["admins"] = len(approved_admins)
 
+        # เก็บ record รวมของทั้งสัปดาห์ (ต่อลาน) ก่อนส่งเมล
+        lot_metrics = {}
+        for lot_id in LOT_IDS:
+            try:
+                metrics = build_lot_metrics(db, lot_id, week_start, report_end)
+                record_weekly_metrics(db, lot_id, week_start, week_end, metrics)
+                lot_metrics[lot_id] = metrics
+            except Exception as exc:
+                summary["errors"].append(f"weekly summary {lot_id}: {exc}")
+
         for admin in approved_admins:
             if not admin.email:
                 summary["errors"].append(f"admin id={admin.id}: no email address")
                 continue
-            for lot_id in ("CAMT_01", "CAMT_02"):
-                try:
-                    csv_bytes, csv_filename, _ = export_service.export_analytics(
-                        lot_id, start_date, end_date, "csv"
-                    )
-                    pdf_bytes, pdf_filename, _ = export_service.export_analytics(
-                        lot_id, start_date, end_date, "pdf"
-                    )
-                    sent = email_service.send_weekly_report(
-                        admin.email,
-                        lot_id,
-                        start_date,
-                        end_date,
-                        csv_bytes,
-                        pdf_bytes,
-                        csv_filename=csv_filename,
-                        pdf_filename=pdf_filename,
-                    )
-                except Exception as exc:
-                    summary["emails_failed"] += 1
-                    summary["errors"].append(
-                        f"{admin.email} / {lot_id}: export failed: {exc}"
-                    )
-                    continue
+            if not lot_metrics:
+                summary["emails_failed"] += 1
+                summary["errors"].append(
+                    f"{admin.email}: weekly summary unavailable for all lots"
+                )
+                continue
+            try:
+                csv_bytes, csv_filename, _ = export_service.export_combined_analytics(
+                    list(lot_metrics.keys()),
+                    week_start,
+                    report_end,
+                    "csv",
+                    kpis_by_lot=lot_metrics,
+                )
+                pdf_bytes, pdf_filename, _ = export_service.export_combined_analytics(
+                    list(lot_metrics.keys()),
+                    week_start,
+                    report_end,
+                    "pdf",
+                    kpis_by_lot=lot_metrics,
+                )
+                sent = email_service.send_weekly_report(
+                    admin.email,
+                    week_start,
+                    report_end,
+                    attachments=[
+                        (csv_filename, csv_bytes),
+                        (pdf_filename, pdf_bytes),
+                    ],
+                )
+            except Exception as exc:
+                summary["emails_failed"] += 1
+                summary["errors"].append(
+                    f"{admin.email}: combined export failed: {exc}"
+                )
+                continue
 
-                if sent:
-                    summary["emails_sent"] += 1
-                else:
-                    summary["emails_failed"] += 1
-                    summary["errors"].append(
-                        f"{admin.email} / {lot_id}: send failed (see EmailService log)"
-                    )
+            if sent:
+                summary["emails_sent"] += 1
+            else:
+                summary["emails_failed"] += 1
+                summary["errors"].append(
+                    f"{admin.email}: send failed (see EmailService log)"
+                )
     finally:
         db.close()
 

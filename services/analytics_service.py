@@ -106,10 +106,7 @@ class AnalyticsService:
             utilization = sum(s.occupacy_rate for s in snapshots) / len(snapshots)
             peak_occupancy = max(s.occupied_spaces for s in snapshots)
 
-        vehicle_count = self.db.query(EntryRecord).filter(
-            EntryRecord.timestamp >= start_date,
-            EntryRecord.timestamp <= end_date,
-        ).count()
+        vehicle_count = self._vehicle_count_for_lot(lot_id, start_date, end_date)
 
         return {
             "lot_id": lot_id,
@@ -118,6 +115,29 @@ class AnalyticsService:
             "vehicle_count": vehicle_count,
             "avg_dwell_time_minutes": round(self._calculate_avg_dwell_time(lot_id, start_date, end_date), 2),
         }
+
+    def _vehicle_count_for_lot(
+        self, lot_id: str, start_date: datetime, end_date: datetime
+    ) -> int:
+        """นับรถเข้าเฉพาะลานนี้ ถ้ามีข้อมูลที่ระบุ lot แล้ว (ถอยกลับไปนับรวมทั้งระบบถ้ายังไม่มี)"""
+        window = (
+            EntryRecord.timestamp >= start_date,
+            EntryRecord.timestamp <= end_date,
+        )
+        has_tagged_lot = (
+            self.db.query(EntryRecord)
+            .filter(*window, EntryRecord.lot_id.isnot(None))
+            .first()
+            is not None
+        )
+        if not has_tagged_lot:
+            return self.db.query(EntryRecord).filter(*window).count()
+
+        return (
+            self.db.query(EntryRecord)
+            .filter(*window, EntryRecord.lot_id == lot_id)
+            .count()
+        )
 
     def get_slot_event_history(
         self,
