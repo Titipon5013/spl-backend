@@ -1,6 +1,8 @@
 import io
 import os
 import smtplib
+import ssl
+from datetime import datetime
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -12,6 +14,7 @@ SMTP_PORT = int(os.getenv("SMTP_PORT", "1025"))
 SMTP_USER = os.getenv("SMTP_USER", "")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
 SMTP_FROM = os.getenv("SMTP_FROM", "parkpilot@camt.cmu.ac.th")
+SMTP_TIMEOUT = float(os.getenv("SMTP_TIMEOUT", "15"))
 LINE_BOT_URL = os.getenv("LINE_BOT_URL", "https://line.me/R/ti/p/@parkpilot")
 
 
@@ -32,18 +35,29 @@ class EmailService:
         )
 
     def send_weekly_report(
-        self, recipient: str, csv_bytes: bytes, pdf_bytes: bytes
+        self,
+        recipient: str,
+        lot_id: str,
+        start_date: datetime,
+        end_date: datetime,
+        csv_bytes: bytes,
+        pdf_bytes: bytes,
+        csv_filename: str = "weekly-report.csv",
+        pdf_filename: str = "weekly-report.pdf",
     ) -> bool:
+        period = f"{start_date.date()} to {end_date.date()}"
         body = (
-            "Attached are your weekly ParkPilot performance reports (CSV and PDF).\n"
+            f"ParkPilot weekly performance report for {lot_id}.\n"
+            f"Period: {period}\n\n"
+            "Attached: occupancy trends, KPIs, and heatmap data (CSV and PDF).\n"
         )
         return self._send_email(
             recipient,
-            "ParkPilot — Weekly Performance Report",
+            f"ParkPilot Weekly Report — {lot_id} ({period})",
             body,
             attachments=[
-                ("weekly-report.csv", csv_bytes),
-                ("weekly-report.pdf", pdf_bytes),
+                (csv_filename, csv_bytes),
+                (pdf_filename, pdf_bytes),
             ],
         )
 
@@ -76,12 +90,14 @@ class EmailService:
             message.attach(part)
 
         try:
-            with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
+            with smtplib.SMTP(
+                SMTP_HOST, SMTP_PORT, timeout=SMTP_TIMEOUT
+            ) as server:
                 if SMTP_USER:
-                    server.starttls()
+                    server.starttls(context=ssl.create_default_context())
                     server.login(SMTP_USER, SMTP_PASSWORD)
                 server.sendmail(SMTP_FROM, [recipient], message.as_string())
             return True
         except Exception as exc:
-            print(f"[EmailService] Failed to send email: {exc}")
+            print(f"[EmailService] Failed to send email to {recipient}: {exc}")
             return False

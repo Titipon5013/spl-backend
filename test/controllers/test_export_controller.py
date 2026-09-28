@@ -94,35 +94,53 @@ def test_export_pdf(client, db_session, approved_admin):
 
 @patch("services.report_scheduler._run_weekly_reports")
 def test_trigger_weekly_report(mock_run, client, approved_admin):
+    mock_run.return_value = {
+        "admins": 1,
+        "emails_sent": 2,
+        "emails_failed": 0,
+        "errors": [],
+    }
     response = client.post(
         "/api/reports/trigger",
         headers=_auth_headers(approved_admin.id),
     )
     assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "success"
+    assert body["summary"]["emails_sent"] == 2
     mock_run.assert_called_once()
 
 
 def test_weekly_scheduler_dispatches_reports_to_approved_admins(db_session, approved_admin):
     from services import report_scheduler
 
-    export_payloads = {
-        "csv": (b"csv-report", "weekly-report.csv", "text/csv"),
-        "pdf": (b"%PDF-report", "weekly-report.pdf", "application/pdf"),
-    }
+    def fake_export(lot_id, _start_date, _end_date, export_format):
+        if export_format == "csv":
+            return (b"csv-report", f"parkpilot-{lot_id}.csv", "text/csv")
+        return (b"%PDF-report", f"parkpilot-{lot_id}.pdf", "application/pdf")
 
     with patch.object(
         report_scheduler.ExportService,
         "export_analytics",
-        side_effect=lambda _lot_id, _start_date, _end_date, export_format: export_payloads[export_format],
+        side_effect=fake_export,
     ) as mock_export, patch.object(
         report_scheduler.EmailService,
         "send_weekly_report",
+        return_value=True,
     ) as mock_send:
-        report_scheduler._run_weekly_reports()
+        summary = report_scheduler._run_weekly_reports()
 
     assert mock_export.call_count == 4
-    mock_send.assert_any_call(approved_admin.email, b"csv-report", b"%PDF-report")
     assert mock_send.call_count == 2
+    calls = {call.args[1]: call for call in mock_send.call_args_list}
+    assert set(calls) == {"CAMT_01", "CAMT_02"}
+    camt_01 = calls["CAMT_01"]
+    assert camt_01.args[0] == approved_admin.email
+    assert camt_01.args[4] == b"csv-report"
+    assert camt_01.args[5] == b"%PDF-report"
+    assert camt_01.kwargs["csv_filename"] == "parkpilot-CAMT_01.csv"
+    assert camt_01.kwargs["pdf_filename"] == "parkpilot-CAMT_01.pdf"
+    assert summary == {"admins": 1, "emails_sent": 2, "emails_failed": 0, "errors": []}
 
 
 def test_start_report_scheduler_registers_weekly_cron_job(monkeypatch):

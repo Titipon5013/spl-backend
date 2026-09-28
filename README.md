@@ -13,6 +13,7 @@ This is the backend for the Smart Parking Lot application, built with FastAPI. I
 - **Database Migrations**: Utilizes Alembic to handle database schema migrations, making it easy to evolve the data model over time.
 - **MCP Server (Feature 2)**: Exposes live and historical parking data as Model Context Protocol tools for AI agents, over stdio (Claude Desktop) and HTTP at `/mcp`. Includes automatic detection of stuck slots, pipeline outages and offline devices. See [docs/feature2-mcp-server.md](docs/feature2-mcp-server.md).
 - **Admin LINE Bot (Feature 4)**: Separate admin LINE channel for linked operators. Queries go through the Feature 2 MCP client; anomaly pushes use subscription + delivery dedupe. See [docs/feature4-admin-line.md](docs/feature4-admin-line.md).
+- **Automated Weekly Reports (Feature 5)**: Every approved administrator receives per-lot CSV/PDF performance reports on a weekly schedule (Monday 08:00 by default, `WEEKLY_REPORT_*`). Delivery uses SMTP (`SMTP_*`, `EMAIL_DISABLED`); `POST /api/reports/trigger` dispatches on demand. See [docs/progress1-readiness.md](docs/progress1-readiness.md).
 - **Windows local testing**: [docs/windows-local-test-guide.md](docs/windows-local-test-guide.md) — pull `dev`, run MCP + admin LINE with ngrok.
 
 ## Technologies Used
@@ -37,6 +38,7 @@ The following are the primary API endpoints provided by the backend:
 - `/api/parking-spaces`: For managing parking spaces and their real-time status.
 - `/api/plates`: For managing user license plates.
 - `/mcp/`: The MCP server endpoint for AI agents. Requires a bearer token from `MCP_API_TOKENS`.
+- `/api/reports/trigger`: Dispatches the weekly report emails on demand (approved admins only) and returns a sent/failed summary.
 - `/webhook/line/admin`: Admin LINE webhook (Feature 4). Requires `ADMIN_LINE_*` and a linked subscription for queries.
 - `/webhook/line/user`: Commuter LINE webhook (Feature 6).
 

@@ -32,8 +32,12 @@ def _require_approved_admin(current_user: Admin = Depends(dependencies.get_curre
 def trigger_weekly_report(
     _: Admin = Depends(_require_approved_admin),
 ):
-    trigger_weekly_reports_now()
-    return {"status": "success", "message": "Weekly reports dispatched"}
+    summary = trigger_weekly_reports_now()
+    return {
+        "status": "success",
+        "message": "Weekly reports dispatched",
+        "summary": summary,
+    }
 
 
 @router.get("/api/analytics/export")

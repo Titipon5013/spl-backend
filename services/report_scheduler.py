@@ -14,8 +14,9 @@ from services.export_service import ExportService
 _scheduler: BackgroundScheduler | None = None
 
 
-def _run_weekly_reports():
+def _run_weekly_reports() -> dict:
     db = Session()
+    summary = {"admins": 0, "emails_sent": 0, "emails_failed": 0, "errors": []}
     try:
         export_service = ExportService(db)
         email_service = EmailService()
@@ -26,18 +27,54 @@ def _run_weekly_reports():
             .filter(Admin.approval_status == ApprovalStatus.approved)
             .all()
         )
+        summary["admins"] = len(approved_admins)
 
         for admin in approved_admins:
+            if not admin.email:
+                summary["errors"].append(f"admin id={admin.id}: no email address")
+                continue
             for lot_id in ("CAMT_01", "CAMT_02"):
-                csv_bytes, _, _ = export_service.export_analytics(
-                    lot_id, start_date, end_date, "csv"
-                )
-                pdf_bytes, _, _ = export_service.export_analytics(
-                    lot_id, start_date, end_date, "pdf"
-                )
-                email_service.send_weekly_report(admin.email, csv_bytes, pdf_bytes)
+                try:
+                    csv_bytes, csv_filename, _ = export_service.export_analytics(
+                        lot_id, start_date, end_date, "csv"
+                    )
+                    pdf_bytes, pdf_filename, _ = export_service.export_analytics(
+                        lot_id, start_date, end_date, "pdf"
+                    )
+                    sent = email_service.send_weekly_report(
+                        admin.email,
+                        lot_id,
+                        start_date,
+                        end_date,
+                        csv_bytes,
+                        pdf_bytes,
+                        csv_filename=csv_filename,
+                        pdf_filename=pdf_filename,
+                    )
+                except Exception as exc:
+                    summary["emails_failed"] += 1
+                    summary["errors"].append(
+                        f"{admin.email} / {lot_id}: export failed: {exc}"
+                    )
+                    continue
+
+                if sent:
+                    summary["emails_sent"] += 1
+                else:
+                    summary["emails_failed"] += 1
+                    summary["errors"].append(
+                        f"{admin.email} / {lot_id}: send failed (see EmailService log)"
+                    )
     finally:
         db.close()
+
+    print(
+        f"[weekly-report] admins={summary['admins']} sent={summary['emails_sent']} "
+        f"failed={summary['emails_failed']}"
+    )
+    for error in summary["errors"]:
+        print(f"[weekly-report] error: {error}")
+    return summary
 
 
 def _run_anomaly_detection():
@@ -110,7 +147,7 @@ def stop_report_scheduler():
 
 
 def trigger_weekly_reports_now():
-    _run_weekly_reports()
+    return _run_weekly_reports()
 
 
 def trigger_anomaly_detection_now():

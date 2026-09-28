@@ -98,6 +98,7 @@ Known non-blocking warning: the production JavaScript bundle is larger than Vite
    - `test_weekly_scheduler_dispatches_reports_to_approved_admins`: weekly report dispatch generates CSV/PDF exports and sends them to approved administrators.
    - `test_start_report_scheduler_registers_weekly_cron_job`: scheduler registers the configured weekly cron job.
    - `test_trigger_weekly_report`: manual endpoint `POST /api/reports/trigger` calls report dispatch.
+   - `test/services/test_weekly_report_e2e.py`: real end-to-end dispatch over SMTP into a local capture server — verifies approved-admin-only delivery, lot-labelled subjects/attachments, seeded KPI/trend values in the CSV, valid PDF, and that SMTP failures are reported without aborting the run.
 
 ## Acceptance Position
 
@@ -142,6 +143,10 @@ The backend supports both direct edge posting and backend-pulled edge JSON inges
    - `GET /api/analytics/current?lot_id=CAMT_02`
    - `GET /api/analytics/heatmap?lot_id=CAMT_01`
    - `GET /api/analytics/health`
+
+4. Configure the weekly report mail relay.
+
+   `deploy/portainer-stack.yml` now passes `SMTP_*` and keeps `EMAIL_DISABLED=true` by default. Before handoff, fill real credentials in the stack env, set `EMAIL_DISABLED=false`, and run `POST /api/reports/trigger` once against the deployed instance to confirm delivery to a real inbox. The container image has no tzdata, so `WEEKLY_REPORT_HOUR` is UTC unless the image is extended with a timezone database.
 
 ## Integration Follow-Up
 
