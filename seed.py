@@ -1,29 +1,32 @@
 import os
 from dotenv import load_dotenv
 from passlib.context import CryptContext
-from db.session import SessionLocal
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 from db.models import Admin
 from enums import RoleEnum, ApprovalStatus
 
 load_dotenv()
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    DATABASE_URL = "postgresql+psycopg2://postgres:password@postgres:5432/smartparkinglot"
 
+engine = create_engine(DATABASE_URL)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 def run_seed():
     db = SessionLocal()
     try:
-        username = os.getenv("SEED_USERNAME")
-        password = os.getenv("SEED_PASSWORD")
-        email = os.getenv("SEED_EMAIL")
-
-        if not username or not password:
-            print("❌ ไม่พบตัวแปร SEED_USERNAME หรือ SEED_PASSWORD ใน Environment")
-            return
+        username = os.getenv("SEED_USERNAME", "admin")
+        password = os.getenv("SEED_PASSWORD", "admin123")
+        email = os.getenv("SEED_EMAIL", "admin@gmail.com")
 
         existing_admin = db.query(Admin).filter(Admin.username == username).first()
         if existing_admin:
-            print(f"✅ มีบัญชี '{username}' อยู่ในฐานข้อมูลเรียบร้อยแล้ว ไม่ต้องสร้างซ้ำ")
+            print(f"✅ มีบัญชี '{username}' อยู่ในฐานข้อมูลเรียบร้อยแล้ว")
             return
 
         hashed_password = pwd_context.hash(password)
@@ -36,14 +39,12 @@ def run_seed():
         )
         db.add(new_admin)
         db.commit()
-        print(f"🎉 สร้างบัญชี Admin '{username}' สำเร็จแล้ว! เอาไปล็อกอินได้เลย")
-
+        print(f"🎉 สร้างบัญชี Admin '{username}' สำเร็จแล้ว!")
     except Exception as e:
-        print(f"❌ เกิดข้อผิดพลาดระหว่างสร้าง Admin: {e}")
+        print(f"❌ เกิดข้อผิดพลาด: {e}")
         db.rollback()
     finally:
         db.close()
-
 
 if __name__ == "__main__":
     run_seed()
