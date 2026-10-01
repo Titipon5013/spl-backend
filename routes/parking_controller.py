@@ -143,6 +143,7 @@ def stop_exit_gate_service(
     return parking_service.stop_exit_gate_service()
 
 
+@stream_router.get("/{camera}/")
 @stream_router.get("/{camera}")
 @stream_router.get("/{camera}/{stream_path:path}")
 def proxy_camera_stream(

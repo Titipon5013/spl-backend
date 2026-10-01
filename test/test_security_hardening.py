@@ -77,12 +77,18 @@ def test_gate_open_requires_auth(client):
 
 
 @pytest.mark.parametrize("path", [
+    "/license/",
     "/license1",
+    "/license1/",
     "/license1/index.m3u8",
+    "/license2/",
     "/license2",
     "/license2/index.m3u8",
+    "/parking/",
     "/parking1",
+    "/parking1/",
     "/parking1/index.m3u8",
+    "/parking2/",
     "/parking2",
     "/parking2/index.m3u8",
 ])
