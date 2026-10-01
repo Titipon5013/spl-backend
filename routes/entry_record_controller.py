@@ -1,10 +1,10 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, Query, UploadFile, File, Form, HTTPException
 from schemas.entry_record import EntryRecord, WeeklyUsage
+from schemas.admin import AdminOut
 from services.entry_record_service import EntryRecordService
 from services.dependencies import get_entry_record_service
-from auth import dependencies
-from db.models import Admin
+from auth.dependencies import get_current_admin_role
 from datetime import date
 
 router = APIRouter(prefix="/api", tags=["entry-records"])
@@ -12,7 +12,7 @@ router = APIRouter(prefix="/api", tags=["entry-records"])
 @router.get("/entry-records", response_model=List[EntryRecord])
 def get_all_entry_records(
     entry_record_service: EntryRecordService = Depends(get_entry_record_service),
-    current_user: Admin = Depends(dependencies.get_current_admin_user),
+    current_user: AdminOut = Depends(get_current_admin_role),
     start_date: Optional[date] = Query(None),
     end_date: Optional[date] = Query(None)
 ):
@@ -21,7 +21,7 @@ def get_all_entry_records(
 @router.get("/entry-records/weekly-usage", response_model=List[WeeklyUsage])
 def get_weekly_usage(
     entry_record_service: EntryRecordService = Depends(get_entry_record_service),
-    current_user: Admin = Depends(dependencies.get_current_admin_user),
+    current_user: AdminOut = Depends(get_current_admin_role),
 ):
     return entry_record_service.get_weekly_usage()
 
@@ -30,6 +30,7 @@ def create_entry_record(
     plate_number: str = Form(...),
     file: UploadFile = File(...),  # รับรูปป้ายทะเบียนที่ AI ตัดมาให้
     entry_record_service: EntryRecordService = Depends(get_entry_record_service),
+    # 💡 Endpoint นี้ไม่ได้ใส่ auth check เพื่อเปิดให้ Edge AI/กล้อง ยิงข้อมูลเข้ามาได้โดยตรง
 ):
     try:
         return entry_record_service.create_entry_record(
@@ -45,7 +46,7 @@ def update_entry_record(
     plate_number: str = Form(...),
     file: Optional[UploadFile] = File(None),
     entry_record_service: EntryRecordService = Depends(get_entry_record_service),
-    current_user: Admin = Depends(dependencies.get_current_admin_user),
+    current_user: AdminOut = Depends(get_current_admin_role),
 ):
     try:
         return entry_record_service.update_entry_record(
@@ -60,7 +61,7 @@ def update_entry_record(
 def delete_entry_record(
     entry_id: int,
     entry_record_service: EntryRecordService = Depends(get_entry_record_service),
-    current_user: Admin = Depends(dependencies.get_current_admin_user),
+    current_user: AdminOut = Depends(get_current_admin_role),
 ):
     try:
         entry_record_service.delete_entry_record(entry_id)

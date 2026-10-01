@@ -1,18 +1,22 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from services.admin_service import AdminService
 from auth.dependencies import create_access_token
 from services.dependencies import get_admin_service
-from helpers.rate_limit import login_rate_limit
-from enums import ApprovalStatus
+
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+
+limiter = Limiter(key_func=get_remote_address)
 
 login_router: APIRouter = APIRouter(tags=["Login"])
 
 @login_router.post("/api/login")
+@limiter.limit("5/minute")
 def login(
+    request: Request,
     credentials: OAuth2PasswordRequestForm = Depends(),
     admin_service: AdminService = Depends(get_admin_service),
-    _rate_limit: None = Depends(login_rate_limit),
 ):
     admin = admin_service.authenticate_admin(credentials.username, credentials.password)
 
@@ -21,12 +25,6 @@ def login(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",
             headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    if admin.approval_status != ApprovalStatus.approved:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Administrator access is {admin.approval_status.value}",
         )
 
     access_token = create_access_token(

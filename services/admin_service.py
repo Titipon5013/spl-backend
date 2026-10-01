@@ -4,11 +4,16 @@ from schemas.admin import AdminOut, AdminResponse, AdminCreate, AdminUpdate
 from db.models import Admin
 from passlib.context import CryptContext
 from pydantic import ValidationError
-from enums import RoleEnum, ApprovalStatus, AuthProvider
+from enums import RoleEnum
 from auth.utils import authorize_admin_or_self
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-_DUMMY_HASH = pwd_context.hash("dummy-password-for-constant-time")
+
+
+def _role_value(role) -> str:
+    """Normalize a role (RoleEnum member or raw string) to its string value."""
+    return role.value if isinstance(role, RoleEnum) else role
+
 
 class AdminService:
     def __init__(self, admin_repo: ImplAdminRepositoryInterface):
@@ -17,13 +22,13 @@ class AdminService:
     def _get_validated_admin(self, email: str) -> AdminOut:
         admin = self.admin_repo.get_admin_by_email(email)
         if not admin:
-            pwd_context.verify("dummy-password-for-constant-time", _DUMMY_HASH)
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
         try:
             return AdminOut.model_validate(admin)
         except ValidationError as e:
+            # Log the validation error for debugging
             print(f"Validation Failed for admin {email}: {e}")
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Admin user not found")
 
     def authenticate_admin(self, email, password):
         validated_admin = self._get_validated_admin(email)
@@ -44,14 +49,12 @@ class AdminService:
         authorize_admin_or_self(current_user.id, current_user, require_admin=True)
         if self.admin_repo.get_admin_by_email(admin.email):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
-        
+
         new_admin = Admin(
             username=admin.username,
             email=admin.email,
             hashed_password=pwd_context.hash(admin.password),
             role=admin.role,
-            auth_provider=AuthProvider.local,
-            approval_status=ApprovalStatus.approved,
         )
         created_admin = self.admin_repo.create_admin(new_admin)
         return AdminResponse.model_validate(created_admin)
@@ -61,22 +64,26 @@ class AdminService:
         if not admin_to_edit:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
+        # A user may edit their own record; only admins may edit anyone's.
         authorize_admin_or_self(admin_id, current_user)
+
+        is_admin = _role_value(current_user.role) == RoleEnum.admin.value
 
         update_data = data.model_dump(exclude_unset=True)
 
-        if "role" in update_data and update_data["role"] is not None:
-            authorize_admin_or_self(admin_id, current_user, require_admin=True)
-            if getattr(current_user, "id", None) == admin_id:
+        # Privilege-escalation guard: only admins may change a role. A non-admin
+        # editing their own record must not be able to promote themselves.
+        if "role" in update_data and not is_admin:
+            if _role_value(update_data["role"]) != _role_value(admin_to_edit.role):
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail="You cannot change your own role",
+                    detail="Only admins can change roles",
                 )
 
         if "password" in update_data and update_data["password"]:
-            if current_user.role != RoleEnum.admin.value:
-                if current_user.id != admin_id:
-                    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to change password")
+            # Ensure only admins or the user themselves can change the password
+            if not is_admin and current_user.id != admin_id:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to change password")
             update_data["hashed_password"] = pwd_context.hash(update_data.pop("password"))
 
         updated_admin = self.admin_repo.update_admin(admin_id, update_data)

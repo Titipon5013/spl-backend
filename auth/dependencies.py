@@ -1,32 +1,33 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from jose import JWTError, jwt
 from schemas.token import TokenData
 from fastapi.security import OAuth2PasswordBearer
 from fastapi import Depends, status, HTTPException
-from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 from db import session, models
 from schemas.admin import AdminOut
-from enums import ApprovalStatus
+from enums import RoleEnum
 import os
 from dotenv import load_dotenv
 
 load_dotenv()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/login")
 
-ALOGRITHM = "HS256"
+ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
+# No insecure fallback: a missing SECRET_KEY must fail closed, never sign
+# tokens with a guessable default. Enforced at token-creation/verification time.
 SECRET_KEY = os.getenv("SECRET_KEY")
 
 
 def create_access_token(data: dict):
-    to_encode = data.copy()
-    expire = datetime.now() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode.update({"exp": expire})
     if not SECRET_KEY:
         raise ValueError("SECRET_KEY must be set in config and cannot be None")
+    to_encode = data.copy()
+    expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode.update({"exp": expire})
 
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, ALOGRITHM)
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, ALGORITHM)
     return encoded_jwt
 
 
@@ -34,12 +35,12 @@ def verify_access_token(token: str, credentials_exception):
     try:
         if not SECRET_KEY:
             raise ValueError("SECRET_KEY must be set in config and cannot be None")
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALOGRITHM])
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         id_ = payload.get("user_id")
         if id_ is None:
             raise credentials_exception
         token_data = TokenData(id=str(id_))
-    except JWTError:
+    except (JWTError, ValueError):
         raise credentials_exception
 
     return token_data
@@ -69,14 +70,25 @@ async def get_current_admin_user(
 
     try:
         token_data = verify_access_token(token, credentials_exception)
-        user = db.query(models.Admin).filter(models.Admin.id == int(token_data.id)).first()
+        try:
+            user_id = int(token_data.id)
+        except (TypeError, ValueError):
+            raise credentials_exception
+        user = db.query(models.Admin).filter(models.Admin.id == user_id).first()
         if not user:
             raise credentials_exception
-        if user.approval_status != ApprovalStatus.approved:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Administrator access is {user.approval_status.value}",
-            )
         return AdminOut.model_validate(user)
     except JWTError:
         raise credentials_exception
+
+
+async def get_current_admin_role(
+    current_user: AdminOut = Depends(get_current_admin_user),
+) -> AdminOut:
+    """Requires an authenticated administrator, not merely an operator."""
+    if current_user.role != RoleEnum.admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Administrator access required",
+        )
+    return current_user
