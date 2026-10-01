@@ -77,7 +77,10 @@ def test_gate_open_requires_auth(client):
 
 
 @pytest.mark.parametrize("path", [
-    "/license/",
+    "/parking",
+    "/parking/index.m3u8",
+    "/license",
+    "/license/index.m3u8",
     "/license1",
     "/license1/",
     "/license1/index.m3u8",
@@ -92,34 +95,36 @@ def test_gate_open_requires_auth(client):
     "/parking2",
     "/parking2/index.m3u8",
 ])
-def test_camera_streams_require_admin_auth(client, path):
+def test_camera_streams_require_auth(client, path):
     with patch("routes.parking_controller.requests.get") as edge:
         response = client.get(path)
     assert response.status_code == 401
     edge.assert_not_called()
 
 
-def test_camera_streams_reject_operator(client):
+def test_camera_streams_allow_approved_operator(client):
     from main import app
-    from auth import dependencies
+    from routes.parking_controller import get_current_stream_user
 
-    app.dependency_overrides[dependencies.get_current_admin_user] = lambda: _admin_out(
-        1, RoleEnum.operator
-    )
+    app.dependency_overrides[get_current_stream_user] = lambda: _admin_out(1, RoleEnum.operator)
     try:
         with patch("routes.parking_controller.requests.get") as edge:
+            edge.return_value.content = b"#EXTM3U"
+            edge.return_value.headers = {"content-type": "application/vnd.apple.mpegurl"}
             response = client.get("/parking1/index.m3u8")
-        assert response.status_code == 403
-        edge.assert_not_called()
+        assert response.status_code == 200
+        assert response.content == b"#EXTM3U"
+        edge.assert_called_once()
     finally:
-        app.dependency_overrides.pop(dependencies.get_current_admin_user, None)
+        app.dependency_overrides.pop(get_current_stream_user, None)
 
 
-def test_gate_open_allows_authenticated_admin(client):
+@pytest.mark.parametrize("role", [RoleEnum.admin, RoleEnum.operator])
+def test_gate_open_allows_approved_dashboard_accounts(client, role):
     from main import app
     from auth import dependencies
 
-    app.dependency_overrides[dependencies.get_current_admin_user] = lambda: _admin_out()
+    app.dependency_overrides[dependencies.get_current_admin_user] = lambda: _admin_out(role=role)
     try:
         with patch("services.parking_service.requests.get") as edge:
             edge.return_value = MagicMock(status_code=200, json=lambda: {"status": "opened"})
@@ -185,21 +190,20 @@ def test_mcp_range_is_bounded(monkeypatch):
 
 # --- Login rate limit -----------------------------------------------------------
 
-def test_login_rate_limit_blocks_burst(monkeypatch, client, db_session):
-    from helpers import rate_limit
+def test_login_rate_limit_blocks_burst(client, db_session):
+    from routes.login_controller import limiter
 
-    monkeypatch.setenv("LOGIN_RATE_LIMIT_PER_MINUTE", "3")
-    rate_limit.reset_login_rate_limits()
+    limiter.reset()
     try:
         statuses = [
             client.post(
                 "/api/login", data={"username": "nobody@example.com", "password": "x"}
             ).status_code
-            for _ in range(5)
+            for _ in range(6)
         ]
         assert 429 in statuses
     finally:
-        rate_limit.reset_login_rate_limits()
+        limiter.reset()
 
 
 # --- Plate request state machine ------------------------------------------------
