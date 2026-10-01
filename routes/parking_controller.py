@@ -133,6 +133,7 @@ def create_stream_session(
     bearer_token: str = Depends(bearer_scheme),
     current_user: AdminOut = Depends(get_current_admin_user),
 ):
+    """Exchange a valid approved-account token for a short-lived HLS cookie."""
     _approved_dashboard_user(current_user)
     if not STREAM_SECRET_KEY:
         raise HTTPException(status_code=500, detail="Authentication is not configured")
