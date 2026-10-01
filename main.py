@@ -73,7 +73,6 @@ app.add_middleware(
 app.include_router(login_router)
 app.include_router(user_router)
 app.include_router(parking_router)
-app.include_router(stream_router)
 app.include_router(register_router)
 app.include_router(request_router)
 app.include_router(plate_router)
@@ -84,8 +83,9 @@ app.include_router(admin_webhook_router, prefix="/webhook", tags=["Admin LINE Ch
 app.include_router(oauth_router)
 app.include_router(admin_access_router)
 app.include_router(report_router)
-
 app.include_router(camera_event_router)
+
+app.include_router(stream_router)
 
 if http_transport_enabled():
     app.mount("/mcp", create_http_app())

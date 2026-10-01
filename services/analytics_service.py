@@ -293,16 +293,17 @@ class AnalyticsService:
         self.db.add(new_snapshot)
 
         if payload.lot_id == "CAMT_02":
-            actual_spots = [
-                "A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "A10", "A11", "A12", "A13",
-                "B1", "B2", "B3", "B4", "B5", "B6",
-                "C1", "C2", "C3", "C4", "C5", "C6", "C7", "C8", "C9", "C10", "C11", "C12", "C13", "C14", "C15"
-            ]
+            zone_a = [f"A{i}" for i in range(1, 14)]
+            zone_c = [f"C{i}" for i in range(1, 16)]
+            zone_b = [f"B{i:02d}" for i in range(1, 7)]
+
+            actual_spots = zone_a + zone_c + zone_b
         else:
             actual_spots = [f"Spot_{str(i).zfill(2)}" for i in range(1, payload.total_spaces + 1)]
 
         new_events = []
         for index, spot in enumerate(actual_spots):
+            # ถ้ารถยังไม่เกินจำนวน occupied_spaces ให้ใส่เป็น True (มีรถ) นอกนั้นใส่ False (ว่าง)
             is_occupied = True if index < payload.occupied_spaces else False
             new_events.append(
                 ParkingEventLog(
@@ -316,7 +317,8 @@ class AnalyticsService:
 
         device = self.db.query(DeviceHealth).filter(DeviceHealth.device_id == "orange_pi_main").first()
         if not device:
-            device = DeviceHealth(device_id="orange_pi_main", device_type="board", status="online", last_seen=current_time)
+            device = DeviceHealth(device_id="orange_pi_main", device_type="board", status="online",
+                                  last_seen=current_time)
             self.db.add(device)
         else:
             device.status = "online"
