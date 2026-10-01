@@ -76,6 +76,39 @@ def test_gate_open_requires_auth(client):
     edge.assert_not_called()
 
 
+@pytest.mark.parametrize("path", [
+    "/license1",
+    "/license1/index.m3u8",
+    "/license2",
+    "/license2/index.m3u8",
+    "/parking1",
+    "/parking1/index.m3u8",
+    "/parking2",
+    "/parking2/index.m3u8",
+])
+def test_camera_streams_require_admin_auth(client, path):
+    with patch("routes.parking_controller.requests.get") as edge:
+        response = client.get(path)
+    assert response.status_code == 401
+    edge.assert_not_called()
+
+
+def test_camera_streams_reject_operator(client):
+    from main import app
+    from auth import dependencies
+
+    app.dependency_overrides[dependencies.get_current_admin_user] = lambda: _admin_out(
+        1, RoleEnum.operator
+    )
+    try:
+        with patch("routes.parking_controller.requests.get") as edge:
+            response = client.get("/parking1/index.m3u8")
+        assert response.status_code == 403
+        edge.assert_not_called()
+    finally:
+        app.dependency_overrides.pop(dependencies.get_current_admin_user, None)
+
+
 def test_gate_open_allows_authenticated_admin(client):
     from main import app
     from auth import dependencies

@@ -1,3 +1,5 @@
+import os
+
 import requests
 from fastapi import HTTPException, status
 from repository.iparking_repository import IParkingRepository
@@ -5,9 +7,11 @@ from schemas.parking import ParkingSnapshotCreate, ParkingSnapshotResponse
 
 
 class ParkingService:
-    def __init__(self, parking_repo: IParkingRepository, base_url: str = "http://10.41.11.21:9696"):
+    def __init__(self, parking_repo: IParkingRepository, base_url: str | None = None):
         self.parking_repo = parking_repo
-        self.edge_base_url = base_url
+        self.edge_base_url = (base_url or os.getenv(
+            "EDGE_BASE_URL", "http://10.41.11.31:9696"
+        )).rstrip("/")
 
     def get_latest_snapshot(self) -> ParkingSnapshotResponse:
         snapshot = self.parking_repo.get_latest_snapshot()

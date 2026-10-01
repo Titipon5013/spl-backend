@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
 from routes.login_controller import login_router
-from routes.parking_controller import router as parking_router
+from routes.parking_controller import router as parking_router, stream_router
 from routes.register_controller import register_router
 from routes.request_controller import request_router
 from routes.plate_controller import router as plate_router
@@ -69,6 +69,7 @@ app.add_middleware(
 app.include_router(login_router)
 app.include_router(user_router)
 app.include_router(parking_router)
+app.include_router(stream_router)
 app.include_router(register_router)
 app.include_router(request_router)
 app.include_router(plate_router)
