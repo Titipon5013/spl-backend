@@ -267,6 +267,11 @@ def proxy_camera_stream(
     _: AdminOut = Depends(get_current_stream_user),
 ):
     """Proxy camera HLS content so the edge node is never publicly reachable."""
+    if "\\" in stream_path or "\x00" in stream_path or any(
+        part in {".", ".."} for part in stream_path.split("/")
+    ):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid stream path")
+
     upstream_url = f"{EDGE_BASE_URL}/{camera.value}/{stream_path}"
     try:
         upstream = requests.get(upstream_url, timeout=5)

@@ -4,7 +4,7 @@ from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
-from routes.login_controller import login_router
+from routes.login_controller import login_router, limiter as login_limiter
 from routes.parking_controller import router as parking_router, stream_router
 from routes.register_controller import register_router
 from routes.request_controller import request_router
@@ -22,6 +22,8 @@ from routes.camera_event_controller import router as camera_event_router
 from services.report_scheduler import start_report_scheduler, stop_report_scheduler
 from mcp_server.server import create_http_app, http_transport_enabled, mcp_lifespan
 from mqtt.client import mqttClient
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 import os
 
 BROKER_HOST = os.getenv("MQTT_BROKER_HOST", default="localhost")
@@ -44,6 +46,8 @@ async def lifespan(app: FastAPI):
     mqtt_client.stop_mqtt()
 
 app = FastAPI(lifespan=lifespan)
+app.state.limiter = login_limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 default_origins = [
     "http://localhost:8080",

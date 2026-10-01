@@ -77,7 +77,10 @@ def test_gate_open_requires_auth(client):
 
 
 @pytest.mark.parametrize("path", [
-    "/license/",
+    "/parking",
+    "/parking/index.m3u8",
+    "/license",
+    "/license/index.m3u8",
     "/license1",
     "/license1/",
     "/license1/index.m3u8",
@@ -187,21 +190,20 @@ def test_mcp_range_is_bounded(monkeypatch):
 
 # --- Login rate limit -----------------------------------------------------------
 
-def test_login_rate_limit_blocks_burst(monkeypatch, client, db_session):
-    from helpers import rate_limit
+def test_login_rate_limit_blocks_burst(client, db_session):
+    from routes.login_controller import limiter
 
-    monkeypatch.setenv("LOGIN_RATE_LIMIT_PER_MINUTE", "3")
-    rate_limit.reset_login_rate_limits()
+    limiter.reset()
     try:
         statuses = [
             client.post(
                 "/api/login", data={"username": "nobody@example.com", "password": "x"}
             ).status_code
-            for _ in range(5)
+            for _ in range(6)
         ]
         assert 429 in statuses
     finally:
-        rate_limit.reset_login_rate_limits()
+        limiter.reset()
 
 
 # --- Plate request state machine ------------------------------------------------
