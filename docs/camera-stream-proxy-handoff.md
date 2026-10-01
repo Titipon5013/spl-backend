@@ -4,6 +4,52 @@ Apply this at the production reverse proxy that serves the frontend and camera
 streams. Backend changes alone do not protect the four HLS routes unless the
 reverse proxy routes them through the backend's protected stream proxy.
 
+An anonymous production probe returned `200` for `license`, `license1`, and
+`parking` manifests with `Cache-Control: max-age=30`, and HTML `502` for both
+inference endpoints. That differs from this backend's expected responses
+(`401` for anonymous requests and `no-store` headers) and indicates the active
+production proxy is not reaching the protected backend path. A frontend static
+file rebuild alone will not update a separate CAMT-managed proxy.
+
+## Nginx routing
+
+If Nginx serves the frontend and API, route API and camera requests to the
+backend service. The frontend repository's `nginx.conf` contains this routing.
+If CAMT terminates these paths in another Nginx instance, apply equivalent
+locations there and replace `backend:8000` with the backend's reachable service
+name and port:
+
+```nginx
+location ^~ /api/ {
+    proxy_pass http://backend:8000;
+    proxy_set_header Authorization $http_authorization;
+    proxy_set_header Cookie $http_cookie;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_cache off;
+    proxy_no_cache 1;
+    proxy_hide_header Cache-Control;
+    add_header Cache-Control "private, no-store" always;
+}
+
+location ~ ^/(license1|license2|parking1|parking2|license|parking)(/|$) {
+    proxy_pass http://backend:8000;
+    proxy_set_header Cookie $http_cookie;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_buffering off;
+    proxy_cache off;
+    proxy_no_cache 1;
+    proxy_hide_header Cache-Control;
+    add_header Cache-Control "private, no-store" always;
+}
+```
+
+Do not configure a direct-to-edge location for these camera prefixes. Keep the
+edge source private so the backend is the only route to stream data.
+
 ## Required behavior
 
 - Route **every request** under `/parking/`, `/parking2/`, `/license/`, and
@@ -40,3 +86,8 @@ controls work. Revoke or unapprove a test account and confirm new stream
 requests fail. Check the browser network panel to confirm no URL contains a
 token. Backend and frontend repositories do not contain the production CAMT
 proxy configuration, so this server-side work remains a deployment handoff.
+
+Never verify gate auth by sending a production request to
+`GET /api/parking/open`: that endpoint opens the gate when authorized. Confirm
+route wiring from configuration and use the backend regression test that
+asserts anonymous requests return `401` without calling the edge service.
