@@ -83,8 +83,14 @@ app.include_router(admin_webhook_router, prefix="/webhook", tags=["Admin LINE Ch
 app.include_router(oauth_router)
 app.include_router(admin_access_router)
 app.include_router(report_router)
-app.include_router(camera_event_router)
+app.include_router(camera_event_router, prefix="/api")
+# Preserve the ingestion paths already used by the detector documentation and
+# simulator while keeping /api/{heartbeat,camera/events} available to old clients.
+app.include_router(camera_event_router, prefix="/api/analytics")
 
+# Keep the catch-all HLS routes after concrete API routes. Otherwise paths such
+# as /api/analytics/health match /{camera}/{stream_path:path} first and demand
+# a stream cookie instead of reaching their API handlers.
 app.include_router(stream_router)
 
 if http_transport_enabled():

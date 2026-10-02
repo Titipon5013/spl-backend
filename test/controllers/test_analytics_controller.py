@@ -225,6 +225,67 @@ def test_system_health_uptime(client, db_session):
     assert response.json()["uptime_percentage"] >= 0
 
 
+def test_analytics_health_is_not_captured_by_camera_stream_route(client, db_session):
+    response = client.get("/api/analytics/health?lot_id=CAMT_02")
+
+    assert response.status_code == 200
+
+
+def test_heartbeat_reports_online_devices_through_health_api(client, db_session):
+    heartbeat = client.post(
+        "/api/heartbeat",
+        json={
+            "board_status": "online",
+            "camera_1_status": "online",
+            "camera_2_status": "online",
+            "camera_3_status": "online",
+            "camera_4_status": "online",
+        },
+    )
+
+    assert heartbeat.status_code == 200
+    health = client.get("/api/analytics/health?lot_id=CAMT_02")
+    assert health.status_code == 200
+    data = health.json()
+    assert data["board"]["status"] == "online"
+    assert all(data[f"camera_{index}"]["status"] == "online" for index in range(1, 5))
+
+
+def test_documented_analytics_ingestion_routes_feed_health_and_heatmap(client, db_session):
+    heartbeat = client.post(
+        "/api/analytics/heartbeat",
+        json={
+            "board_status": "online",
+            "camera_1_status": "online",
+            "camera_2_status": "online",
+            "camera_3_status": "online",
+            "camera_4_status": "online",
+        },
+    )
+    events = client.post(
+        "/api/analytics/camera/events",
+        json={
+            "lot_id": "CAMT_02",
+            "total_spaces": 34,
+            "available_spaces": 33,
+            "occupied_spaces": 1,
+            "confidence": 0.95,
+            "processing_time_seconds": 0.2,
+            "events": [{"spot_id": "A1", "status": "occupied"}],
+        },
+    )
+
+    assert heartbeat.status_code == 200
+    assert events.status_code == 201
+    health = client.get("/api/analytics/health?lot_id=CAMT_02")
+    heatmap = client.get("/api/analytics/heatmap?lot_id=CAMT_02")
+    kpis = client.get("/api/analytics/kpis?lot_id=CAMT_02")
+    assert health.json()["board"]["status"] == "online"
+    assert health.json()["camera_2"]["status"] == "online"
+    assert heatmap.json()["spots"][0]["spot_id"] == "A1"
+    assert kpis.json()["peak_occupancy"] == 1
+
+
 def test_heartbeat_updates_four_camera_streams(client, db_session):
     response = client.post(
         "/api/heartbeat",
@@ -313,7 +374,7 @@ def test_sync_snapshot_distributes_occupancy_to_camt02_slots(client, db_session)
 
 
 def test_sync_snapshot_marks_board_online(client, db_session):
-    # TC: /sync ต้องอัปเดต DeviceHealth ของ orange_pi_main เป็น online
+    # Snapshot ingestion must write the same canonical board ID the health API reads.
     response = client.post(
         "/api/analytics/sync",
         json={
@@ -329,7 +390,7 @@ def test_sync_snapshot_marks_board_online(client, db_session):
 
     board = (
         db_session.query(DeviceHealth)
-        .filter(DeviceHealth.device_id == "orange_pi_main")
+        .filter(DeviceHealth.device_id == "ORANGE_PI_MAIN")
         .first()
     )
     assert board is not None

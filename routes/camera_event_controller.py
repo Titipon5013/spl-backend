@@ -10,7 +10,7 @@ from db.models import ParkingSnapshot, ParkingSnapshot2, ParkingEventLog, Device
 from services.analytics_service import AnalyticsService
 from schemas.analytics import DeviceHeartbeatPayload
 
-router = APIRouter(prefix="/api", tags=["camera-events"])
+router = APIRouter(tags=["camera-events"])
 
 
 class EventItem(BaseModel):
@@ -62,6 +62,35 @@ def receive_camera_events(payload: CameraEventPayload, db: Session = Depends(get
             )
             db.add(new_snapshot)
 
+        if payload.events:
+            camera_health = db.query(DeviceHealth).filter(DeviceHealth.device_id == lot_id).first()
+            if not camera_health:
+                camera_health = DeviceHealth(
+                    device_id=lot_id,
+                    device_type="camera",
+                    status="online",
+                    last_seen=current_time,
+                )
+                db.add(camera_health)
+            else:
+                camera_health.status = "online"
+                camera_health.last_seen = current_time
+
+            pi_health = db.query(DeviceHealth).filter(
+                DeviceHealth.device_id == "ORANGE_PI_MAIN"
+            ).first()
+            if not pi_health:
+                pi_health = DeviceHealth(
+                    device_id="ORANGE_PI_MAIN",
+                    device_type="board",
+                    status="online",
+                    last_seen=current_time,
+                )
+                db.add(pi_health)
+            else:
+                pi_health.status = "online"
+                pi_health.last_seen = current_time
+
         for event in payload.events:
             new_event_log = ParkingEventLog(
                 lot_id=lot_id,
@@ -70,24 +99,6 @@ def receive_camera_events(payload: CameraEventPayload, db: Session = Depends(get
                 timestamp=current_time
             )
             db.add(new_event_log)
-
-            camera_health = db.query(DeviceHealth).filter(DeviceHealth.device_id == lot_id).first()
-            if not camera_health:
-                camera_health = DeviceHealth(device_id=lot_id, device_type="camera", status="online",
-                                             last_seen=current_time)
-                db.add(camera_health)
-            else:
-                camera_health.status = "online"
-                camera_health.last_seen = current_time
-
-            pi_health = db.query(DeviceHealth).filter(DeviceHealth.device_id == "ORANGE_PI_MAIN").first()
-            if not pi_health:
-                pi_health = DeviceHealth(device_id="ORANGE_PI_MAIN", device_type="board", status="online",
-                                         last_seen=current_time)
-                db.add(pi_health)
-            else:
-                pi_health.status = "online"
-                pi_health.last_seen = current_time
 
         db.commit()
         return {"message": f"Successfully logged data and updated health for {lot_id}"}
