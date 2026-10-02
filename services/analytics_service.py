@@ -24,10 +24,10 @@ class AnalyticsService:
         self.db = db
 
     CAMERA_HEALTH_DEVICES = (
-        ("camera_1", "cam1", "camera_1_status"),
-        ("camera_2", "cam2", "camera_2_status"),
-        ("camera_3", "cam3", "camera_3_status"),
-        ("camera_4", "cam4", "camera_4_status"),
+        ("camera_1", "CAMT_01", "camera_1_status"),
+        ("camera_2", "CAMT_02", "camera_2_status"),
+        ("camera_3", "CAMT_03", "camera_3_status"),
+        ("camera_4", "CAMT_04", "camera_4_status"),
     )
 
     def get_heatmap_data(self, lot_id: str, start_date: Optional[datetime] = None,
@@ -315,10 +315,9 @@ class AnalyticsService:
             )
         self.db.bulk_save_objects(new_events)
 
-        device = self.db.query(DeviceHealth).filter(DeviceHealth.device_id == "orange_pi_main").first()
+        device = self.db.query(DeviceHealth).filter(DeviceHealth.device_id == "ORANGE_PI_MAIN").first()
         if not device:
-            device = DeviceHealth(device_id="orange_pi_main", device_type="board", status="online",
-                                  last_seen=current_time)
+            device = DeviceHealth(device_id="ORANGE_PI_MAIN", device_type="board", status="online", last_seen=current_time)
             self.db.add(device)
         else:
             device.status = "online"
@@ -330,11 +329,11 @@ class AnalyticsService:
 
     def update_hardware_heartbeat(self, payload: DeviceHeartbeatPayload) -> bool:
         try:
-            self._upsert_device_health("board", payload.board_id, payload.board_status)
-            for device_type, device_suffix, status_attr in self.CAMERA_HEALTH_DEVICES:
+            self._upsert_device_health("board", "ORANGE_PI_MAIN", payload.board_status)
+            for device_type, device_id, status_attr in self.CAMERA_HEALTH_DEVICES:
                 self._upsert_device_health(
                     device_type,
-                    f"{payload.board_id}_{device_suffix}",
+                    device_id,
                     getattr(payload, status_attr),
                 )
             self.db.commit()
