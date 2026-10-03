@@ -292,11 +292,10 @@ class AnalyticsService:
         )
         self.db.add(new_snapshot)
 
-        if payload.lot_id == "CAMT_02":
+        if payload.lot_id == "CAMT_01":
             zone_a = [f"A{i}" for i in range(1, 14)]
             zone_c = [f"C{i}" for i in range(1, 16)]
             zone_b = [f"B{i:02d}" for i in range(1, 7)]
-
             actual_spots = zone_a + zone_c + zone_b
         else:
             actual_spots = [f"Spot_{str(i).zfill(2)}" for i in range(1, payload.total_spaces + 1)]
@@ -315,17 +314,29 @@ class AnalyticsService:
             )
         self.db.bulk_save_objects(new_events)
 
+        # 1. อัปเดตสถานะบอร์ด ORANGE_PI_MAIN (ของเดิม)
         device = self.db.query(DeviceHealth).filter(DeviceHealth.device_id == "ORANGE_PI_MAIN").first()
         if not device:
-            device = DeviceHealth(device_id="ORANGE_PI_MAIN", device_type="board", status="online", last_seen=current_time)
+            device = DeviceHealth(device_id="ORANGE_PI_MAIN", device_type="board", status="online",
+                                  last_seen=current_time)
             self.db.add(device)
         else:
             device.status = "online"
             device.last_seen = current_time
 
+        # 2. 🟢 อัปเดตสถานะกล้อง (ส่วนที่เพิ่มเข้ามาใหม่)
+        camera = self.db.query(DeviceHealth).filter(DeviceHealth.device_id == payload.lot_id).first()
+        if not camera:
+            camera = DeviceHealth(device_id=payload.lot_id, device_type="camera", status="online",
+                                  last_seen=current_time)
+            self.db.add(camera)
+        else:
+            camera.status = "online"
+            camera.last_seen = current_time
+
         self.db.commit()
 
-        return f"Processed snapshot for {payload.lot_id}, distributed to {len(actual_spots)} spots, and updated board health."
+        return f"Processed snapshot for {payload.lot_id}, distributed to {len(actual_spots)} spots, and updated board & camera health."
 
     def update_hardware_heartbeat(self, payload: DeviceHeartbeatPayload) -> bool:
         try:
@@ -354,21 +365,39 @@ class AnalyticsService:
             self.db.add(new_device)
 
     def get_system_health_status(self, lot_id: str) -> SystemHealthResponse:
-        def get_device_status(dev_id: str) -> DeviceStatus:
+        # 1. ฟังก์ชันเดิม: ดึงสถานะจาก DB (ใช้สำหรับ Orange Pi Board)
+        def get_device_status_from_db(dev_id: str) -> DeviceStatus:
             dev = self.db.query(DeviceHealth).filter(DeviceHealth.device_id == dev_id).first()
             if not dev:
                 return DeviceStatus(status="offline", last_seen=None)
-
             if dev.last_seen and (datetime.utcnow() - dev.last_seen).total_seconds() > 300:
                 return DeviceStatus(status="offline", last_seen=dev.last_seen)
-
             return DeviceStatus(status=dev.status, last_seen=dev.last_seen)
 
-        board_stat = get_device_status("ORANGE_PI_MAIN")
-        cam1_stat = get_device_status("CAMT_01")
-        cam2_stat = get_device_status("CAMT_02")
-        cam3_stat = get_device_status("CAMT_03")
-        cam4_stat = get_device_status("CAMT_04")
+        # 2. ฟังก์ชันใหม่: เช็คจากไฟล์สตรีม m3u8 (ใช้สำหรับกล้องทั้ง 4 ตัว)
+        def get_camera_status_from_stream(cam_name: str, stream_folder: str) -> DeviceStatus:
+            # หมายเหตุ: ปรับ "/app/streams/" ให้ตรงกับ Path จริงที่เก็บไฟล์วิดีโอใน Docker ของคุณ
+            file_path = f"/app/streams/{stream_folder}/index.m3u8"
+            try:
+                if os.path.exists(file_path):
+                    mtime = os.path.getmtime(file_path)
+                    # ถ้าไฟล์เพิ่งมีการเขียนใหม่ภายใน 3 นาที (180 วินาที) ถือว่ากล้องออนไลน์ 100%
+                    if (datetime.now().timestamp() - mtime) < 180:
+                        return DeviceStatus(status="online", last_seen=datetime.fromtimestamp(mtime))
+            except Exception as e:
+                print(f"Stream check error for {cam_name}: {e}")
+
+            # ถ้าไฟล์ไม่มีหรือสตรีมค้าง ให้ถอยกลับไปเช็คจาก DB แทน
+            return get_device_status_from_db(cam_name)
+
+        # ตรวจสอบบอร์ดจาก DB
+        board_stat = get_device_status_from_db("ORANGE_PI_MAIN")
+
+        # ตรวจสอบกล้องจากการมีอยู่ของไฟล์สตรีม
+        cam1_stat = get_camera_status_from_stream("CAMT_01", "parking")
+        cam2_stat = get_camera_status_from_stream("CAMT_02", "parking2")
+        cam3_stat = get_camera_status_from_stream("CAMT_03", "license")
+        cam4_stat = get_camera_status_from_stream("CAMT_04", "license1")
 
         camera_stats = (cam1_stat, cam2_stat, cam3_stat, cam4_stat)
 

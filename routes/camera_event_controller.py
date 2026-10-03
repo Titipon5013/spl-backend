@@ -27,7 +27,6 @@ class CameraEventPayload(BaseModel):
     processing_time_seconds: float
     events: List[EventItem] = []
 
-
 @router.post("/camera/events", status_code=201)
 def receive_camera_events(payload: CameraEventPayload, db: Session = Depends(get_db)):
     try:
@@ -62,43 +61,45 @@ def receive_camera_events(payload: CameraEventPayload, db: Session = Depends(get
             )
             db.add(new_snapshot)
 
-        if payload.events:
-            camera_health = db.query(DeviceHealth).filter(DeviceHealth.device_id == lot_id).first()
-            if not camera_health:
-                camera_health = DeviceHealth(
-                    device_id=lot_id,
-                    device_type="camera",
-                    status="online",
-                    last_seen=current_time,
-                )
-                db.add(camera_health)
-            else:
-                camera_health.status = "online"
-                camera_health.last_seen = current_time
-
-            pi_health = db.query(DeviceHealth).filter(
-                DeviceHealth.device_id == "ORANGE_PI_MAIN"
-            ).first()
-            if not pi_health:
-                pi_health = DeviceHealth(
-                    device_id="ORANGE_PI_MAIN",
-                    device_type="board",
-                    status="online",
-                    last_seen=current_time,
-                )
-                db.add(pi_health)
-            else:
-                pi_health.status = "online"
-                pi_health.last_seen = current_time
-
-        for event in payload.events:
-            new_event_log = ParkingEventLog(
-                lot_id=lot_id,
-                spot_id=event.spot_id,
-                is_occupied=(event.status == "occupied"),
-                timestamp=current_time
+        # 🟢 ย้ายบล็อกอัปเดต Health ออกมาข้างนอก! ให้ทำงานทุกครั้งที่มี Request
+        camera_health = db.query(DeviceHealth).filter(DeviceHealth.device_id == lot_id).first()
+        if not camera_health:
+            camera_health = DeviceHealth(
+                device_id=lot_id,
+                device_type="camera",
+                status="online",
+                last_seen=current_time,
             )
-            db.add(new_event_log)
+            db.add(camera_health)
+        else:
+            camera_health.status = "online"
+            camera_health.last_seen = current_time
+
+        pi_health = db.query(DeviceHealth).filter(
+            DeviceHealth.device_id == "ORANGE_PI_MAIN"
+        ).first()
+        if not pi_health:
+            pi_health = DeviceHealth(
+                device_id="ORANGE_PI_MAIN",
+                device_type="board",
+                status="online",
+                last_seen=current_time,
+            )
+            db.add(pi_health)
+        else:
+            pi_health.status = "online"
+            pi_health.last_seen = current_time
+
+        # 🟢 ส่วนของ Events จับใส่ loop for ตามปกติ (ถ้า list ว่าง มันก็จะไม่ทำ loop เอง)
+        if payload.events:
+            for event in payload.events:
+                new_event_log = ParkingEventLog(
+                    lot_id=lot_id,
+                    spot_id=event.spot_id,
+                    is_occupied=(event.status == "occupied"),
+                    timestamp=current_time
+                )
+                db.add(new_event_log)
 
         db.commit()
         return {"message": f"Successfully logged data and updated health for {lot_id}"}
@@ -109,7 +110,6 @@ def receive_camera_events(payload: CameraEventPayload, db: Session = Depends(get
         print(f"🚨 DATABASE ERROR: {str(e)}")
         print(f"=====================================")
         raise HTTPException(status_code=400, detail=str(e))
-
 
 @router.post("/heartbeat")
 def receive_hardware_heartbeat(

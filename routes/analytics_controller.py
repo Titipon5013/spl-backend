@@ -63,22 +63,26 @@ def get_current_status(
     lot_id: str = Query("CAMT_01", description="Parking Lot ID"),
     db: Session = Depends(get_db)
 ):
-    cam1_latest = db.query(ParkingSnapshot).order_by(ParkingSnapshot.timestamp.desc()).first()
-    cam2_latest = db.query(ParkingSnapshot2).order_by(ParkingSnapshot2.timestamp.desc()).first()
+    # ดึงข้อมูล Snapshot ให้ตรงกับ lot_id ที่ Frontend ร้องขอมา
+    if lot_id == "CAMT_01":
+        master_data = db.query(ParkingSnapshot).order_by(ParkingSnapshot.timestamp.desc()).first()
+    else:
+        master_data = db.query(ParkingSnapshot2).order_by(ParkingSnapshot2.timestamp.desc()).first()
 
-    if not cam1_latest and not cam2_latest:
+    if not master_data:
         raise HTTPException(
             status_code=404,
-            detail="No real-time data available. Waiting for AI Worker ingestion."
+            detail=f"No real-time data available for {lot_id}. Waiting for AI Worker ingestion."
         )
 
-    master_data = cam1_latest if cam1_latest else cam2_latest
-    target_lot_id = "CAMT_01" if master_data == cam1_latest else "CAMT_02"
-
-    zone_a = [f"A{i}" for i in range(1, 14)]     # A1 - A13
-    zone_c = [f"C{i}" for i in range(1, 16)]     # C1 - C15
-    zone_b = [f"B{i:02d}" for i in range(1, 7)]  # B01 - B06
-    all_spot_ids = zone_a + zone_c + zone_b
+    # แยกโครงสร้างช่องจอดให้ถูกต้อง: CAMT_01 มี 34 ช่อง (Zone A,B,C), ส่วนลานอื่นใช้ Spot_xx
+    if lot_id == "CAMT_01":
+        zone_a = [f"A{i}" for i in range(1, 14)]     # A1 - A13
+        zone_c = [f"C{i}" for i in range(1, 16)]     # C1 - C15
+        zone_b = [f"B{i:02d}" for i in range(1, 7)]  # B01 - B06
+        all_spot_ids = zone_a + zone_c + zone_b
+    else:
+        all_spot_ids = [f"Spot_{str(i).zfill(2)}" for i in range(1, master_data.total_spaces + 1)]
 
     spots_data = []
     for i, sid in enumerate(all_spot_ids):
@@ -91,12 +95,12 @@ def get_current_status(
     return {
         "lot_id": lot_id,
         "available_spaces": master_data.available_spaces,
-        "total_spaces": 34, # ล็อกเป้าหมายไว้ที่ 34
+        "total_spaces": master_data.total_spaces, # ดึงค่าจริงจาก DB ไม่ Hardcode 34
         "occupied_spaces": master_data.occupied_spaces,
         "occupancy_rate": master_data.occupacy_rate,
         "last_update": master_data.timestamp,
-        "spots": spots_data, # ส่งผังที่อัปเดตแล้วไปให้หน้าเว็บ
-        "active_camera": target_lot_id
+        "spots": spots_data,
+        "active_camera": lot_id
     }
 
 
