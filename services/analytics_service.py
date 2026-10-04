@@ -33,31 +33,63 @@ class AnalyticsService:
     def get_heatmap_data(self, lot_id: str, start_date: Optional[datetime] = None,
                          end_date: Optional[datetime] = None) -> HeatmapResponse:
 
-        query = self.db.query(
-            ParkingEventLog.spot_id,
-            func.count(ParkingEventLog.id).label('total'),
-            func.sum(cast(ParkingEventLog.is_occupied, Integer)).label('occupied')
-        ).filter(ParkingEventLog.lot_id == lot_id)
+        # 1. กำหนดกรอบเวลา (ถ้าไม่ส่งมา ให้ดึงย้อนหลัง 7 วัน เพื่อดูความร้อนสะสมรายสัปดาห์)
+        end = end_date or datetime.now()
+        start = start_date or (end - timedelta(days=7))
 
-        if start_date:
-            query = query.filter(ParkingEventLog.timestamp >= start_date)
-        if end_date:
-            query = query.filter(ParkingEventLog.timestamp <= end_date)
+        total_window_minutes = (end - start).total_seconds() / 60.0
+        if total_window_minutes <= 0:
+            total_window_minutes = 1.0  # ป้องกัน division by zero
 
-        results = query.group_by(ParkingEventLog.spot_id).all()
+        # 2. ดึง Event ทั้งหมดในกรอบเวลา โดยเรียงตามเวลา
+        query = self.db.query(ParkingEventLog).filter(
+            ParkingEventLog.lot_id == lot_id,
+            ParkingEventLog.timestamp >= start,
+            ParkingEventLog.timestamp <= end
+        ).order_by(ParkingEventLog.spot_id, ParkingEventLog.timestamp)
 
+        events = query.all()
+
+        # 3. ตัวแปรสำหรับคำนวณเวลา
+        occupied_minutes = defaultdict(float)
+        last_seen_true = {}
+        total_events_count = defaultdict(int)
+        occupied_events_count = defaultdict(int)
+
+        # 4. คำนวณระยะเวลาที่จอดของแต่ละช่อง (Stateful Duration Calculation)
+        for event in events:
+            spot = event.spot_id
+            total_events_count[spot] += 1
+
+            if event.is_occupied:
+                last_seen_true[spot] = event.timestamp
+                occupied_events_count[spot] += 1
+            else:
+                if spot in last_seen_true:
+                    delta = (event.timestamp - last_seen_true[spot]).total_seconds() / 60.0
+                    if delta > 0:
+                        occupied_minutes[spot] += delta
+                    del last_seen_true[spot]
+
+        # เก็บตก: สำหรับรถที่ "จอดค้างอยู่" จนถึงสิ้นสุดกรอบเวลาปัจจุบัน
+        for spot, start_time in last_seen_true.items():
+            delta = (end - start_time).total_seconds() / 60.0
+            if delta > 0:
+                occupied_minutes[spot] += delta
+
+        # 5. แปลงเป็น Percentage และประกอบร่าง Response
         spot_responses = []
-        for row in results:
-            spot_id = row.spot_id
-            total = row.total or 0
-            occupied = row.occupied or 0
+        for spot, total_events in total_events_count.items():
+            occ_mins = occupied_minutes[spot]
 
-            percentage = (occupied / total * 100) if total > 0 else 0.0
+            # คำนวณเปอร์เซ็นต์จาก "เวลาที่จอดจริง / เวลาทั้งหมดในหน้าต่าง 7 วัน"
+            percentage = (occ_mins / total_window_minutes) * 100.0
+            percentage = min(100.0, max(0.0, percentage))  # ล็อกไว้ไม่ให้เกิน 100%
 
             spot_responses.append(HeatmapSpotResponse(
-                spot_id=spot_id,
-                total_events=total,
-                occupied_events=occupied,
+                spot_id=spot,
+                total_events=total_events,
+                occupied_events=occupied_events_count[spot],
                 occupancy_percentage=round(percentage, 2)
             ))
 
@@ -279,6 +311,7 @@ class AnalyticsService:
     def process_orange_pi_snapshot(self, payload: CameraSnapshotPayload) -> str:
         current_time = datetime.now()
 
+        # 1. บันทึก Aggregate Data ลง ParkingSnapshot
         model = ParkingSnapshot if payload.lot_id == "CAMT_01" else ParkingSnapshot2
         new_snapshot = model(
             lot_id=payload.lot_id,
@@ -292,29 +325,52 @@ class AnalyticsService:
         )
         self.db.add(new_snapshot)
 
+        # 2. จัดเตรียมลิสต์ช่องจอดให้ตรงกับ UI ที่คุณต้องการเป๊ะๆ
         if payload.lot_id == "CAMT_01":
-            zone_a = [f"A{i}" for i in range(1, 14)]
-            zone_c = [f"C{i}" for i in range(1, 16)]
-            zone_b = [f"B{i:02d}" for i in range(1, 7)]
+            zone_a = [f"A{i}" for i in range(1, 14)]  # A1 - A13
+            zone_c = [f"C{i}" for i in range(1, 16)]  # C1 - C15
+            zone_b = [f"B{i:02d}" for i in range(1, 7)]  # B01 - B06
             actual_spots = zone_a + zone_c + zone_b
         else:
             actual_spots = [f"Spot_{str(i).zfill(2)}" for i in range(1, payload.total_spaces + 1)]
 
-        new_events = []
-        for index, spot in enumerate(actual_spots):
-            # ถ้ารถยังไม่เกินจำนวน occupied_spaces ให้ใส่เป็น True (มีรถ) นอกนั้นใส่ False (ว่าง)
-            is_occupied = True if index < payload.occupied_spaces else False
-            new_events.append(
-                ParkingEventLog(
-                    lot_id=payload.lot_id,
-                    spot_id=spot,
-                    is_occupied=is_occupied,
-                    timestamp=current_time
-                )
-            )
-        self.db.bulk_save_objects(new_events)
+        # 3. 🟢 ลอจิก Stateful Simulation (ฉลาดและไม่บันทึกซ้ำ)
+        latest_events = self._latest_event_per_spot(payload.lot_id)
 
-        # 1. อัปเดตสถานะบอร์ด ORANGE_PI_MAIN (ของเดิม)
+        # จัดกลุ่มช่องจอดปัจจุบัน (ใช้ Set เพื่อความรวดเร็ว)
+        currently_occupied = {event.spot_id for event in latest_events if event.is_occupied}
+        currently_available = set(actual_spots) - currently_occupied
+
+        target_occupied_count = payload.occupied_spaces
+        current_occupied_count = len(currently_occupied)
+
+        new_events = []
+
+        if current_occupied_count < target_occupied_count:
+            # มีรถเข้าใหม่: หาช่องที่ยัง 'ว่างอยู่' มาทำเป็น 'จอด'
+            difference = target_occupied_count - current_occupied_count
+            spots_to_occupy = list(currently_available)[:difference]
+
+            for spot in spots_to_occupy:
+                new_events.append(
+                    ParkingEventLog(lot_id=payload.lot_id, spot_id=spot, is_occupied=True, timestamp=current_time)
+                )
+
+        elif current_occupied_count > target_occupied_count:
+            # มีรถออก: หาช่องที่ 'จอดอยู่' มาทำเป็น 'ว่าง'
+            difference = current_occupied_count - target_occupied_count
+            spots_to_free = list(currently_occupied)[:difference]
+
+            for spot in spots_to_free:
+                new_events.append(
+                    ParkingEventLog(lot_id=payload.lot_id, spot_id=spot, is_occupied=False, timestamp=current_time)
+                )
+
+        # บันทึกเฉพาะเมื่อมีการเปลี่ยนแปลงสถานะเท่านั้น (จะไม่เกิด History ซ้ำๆ รัวๆ อีกแล้ว)
+        if new_events:
+            self.db.bulk_save_objects(new_events)
+
+        # 4. อัปเดตสถานะบอร์ด
         device = self.db.query(DeviceHealth).filter(DeviceHealth.device_id == "ORANGE_PI_MAIN").first()
         if not device:
             device = DeviceHealth(device_id="ORANGE_PI_MAIN", device_type="board", status="online",
@@ -324,7 +380,7 @@ class AnalyticsService:
             device.status = "online"
             device.last_seen = current_time
 
-        # 2. 🟢 อัปเดตสถานะกล้อง (ส่วนที่เพิ่มเข้ามาใหม่)
+        # 5. อัปเดตสถานะกล้อง
         camera = self.db.query(DeviceHealth).filter(DeviceHealth.device_id == payload.lot_id).first()
         if not camera:
             camera = DeviceHealth(device_id=payload.lot_id, device_type="camera", status="online",
@@ -336,7 +392,7 @@ class AnalyticsService:
 
         self.db.commit()
 
-        return f"Processed snapshot for {payload.lot_id}, distributed to {len(actual_spots)} spots, and updated board & camera health."
+        return f"Processed snapshot for {payload.lot_id}, simulated {len(new_events)} spot changes."
 
     def update_hardware_heartbeat(self, payload: DeviceHeartbeatPayload) -> bool:
         try:
@@ -365,15 +421,82 @@ class AnalyticsService:
             self.db.add(new_device)
 
     def get_system_health_status(self, lot_id: str) -> SystemHealthResponse:
-        # 1. ฟังก์ชันเดิม: ดึงสถานะจาก DB (ใช้สำหรับ Orange Pi Board)
+        current_time = datetime.now()
+
+        # 1. ฟังก์ชันดึงสถานะจาก DB
         def get_device_status_from_db(dev_id: str) -> DeviceStatus:
             dev = self.db.query(DeviceHealth).filter(DeviceHealth.device_id == dev_id).first()
             if not dev:
                 return DeviceStatus(status="offline", last_seen=None)
-            if dev.last_seen and (datetime.now() - dev.last_seen).total_seconds() > 300:
-                return DeviceStatus(status="offline", last_seen=dev.last_seen)
-            return DeviceStatus(status=dev.status, last_seen=dev.last_seen)
 
+            # เช็คว่าขาดการติดต่อนานเกิน 5 นาที (300 วินาที) หรือไม่
+            if dev.last_seen and (current_time - dev.last_seen).total_seconds() > 300:
+                return DeviceStatus(status="offline", last_seen=dev.last_seen)
+
+            return DeviceStatus(status="online", last_seen=dev.last_seen)
+
+        # 2. ตรวจสอบบอร์ดหลักจาก DB ก่อนเลย (ตัวชี้วัดสำคัญ)
+        board_stat = get_device_status_from_db("ORANGE_PI_MAIN")
+
+        # 3. ฟังก์ชันเช็คกล้องแบบยืดหยุ่น (ถ้าไฟล์ไม่มี ให้ผูกสถานะกับบอร์ดแทน)
+        def get_camera_status_fallback(cam_name: str, stream_folder: str) -> DeviceStatus:
+            file_path = f"/app/streams/{stream_folder}/index.m3u8"
+            try:
+                # ถ้า Docker มีการ mount ไฟล์ไว้ ให้เช็คจากไฟล์ก่อน
+                if os.path.exists(file_path):
+                    mtime = os.path.getmtime(file_path)
+                    if (current_time.timestamp() - mtime) < 180:
+                        return DeviceStatus(status="online", last_seen=datetime.fromtimestamp(mtime))
+            except Exception:
+                pass
+
+            # ถ้าเช็คไฟล์ไม่ได้ ให้เช็คจาก Database
+            db_stat = get_device_status_from_db(cam_name)
+            if db_stat.status == "online":
+                return db_stat
+
+            # 🟢 [จุดแก้ปัญหา] ถ้าใน DB ก็ไม่ออนไลน์ (เพราะไม่มีใครอัปเดต)
+            # แต่เราเห็นภาพกล้องบนเว็บปกติ เราจะให้กล้อง "อิงสถานะตามบอร์ดหลัก" ไปเลย!
+            if board_stat.status == "online":
+                return DeviceStatus(status="online", last_seen=board_stat.last_seen)
+
+            return db_stat
+
+        # ตรวจสอบสถานะกล้องทั้ง 4 ตัวด้วยระบบ Fallback ใหม่
+        cam1_stat = get_camera_status_fallback("CAMT_01", "parking")
+        cam2_stat = get_camera_status_fallback("CAMT_02", "parking2")
+        cam3_stat = get_camera_status_fallback("CAMT_03", "license")
+        cam4_stat = get_camera_status_fallback("CAMT_04", "license1")
+
+        camera_stats = (cam1_stat, cam2_stat, cam3_stat, cam4_stat)
+
+        # สรุปสถานะภาพรวม
+        if board_stat.status == "offline":
+            sys_status = "Critical"
+        elif any(camera.status == "offline" for camera in camera_stats):
+            sys_status = "Degraded"
+        else:
+            sys_status = "Healthy"
+
+        # คำนวณ Uptime Score แบบคร่าวๆ
+        uptime = round(
+            (
+                    self._device_uptime_score(board_stat)
+                    + sum(self._device_uptime_score(camera) for camera in camera_stats)
+            )
+            / 5,
+            2,
+        )
+
+        return SystemHealthResponse(
+            system_status=sys_status,
+            uptime_percentage=uptime,
+            board=board_stat,
+            camera_1=cam1_stat,
+            camera_2=cam2_stat,
+            camera_3=cam3_stat,
+            camera_4=cam4_stat
+        )
         # 2. ฟังก์ชันใหม่: เช็คจากไฟล์สตรีม m3u8 (ใช้สำหรับกล้องทั้ง 4 ตัว)
         def get_camera_status_from_stream(cam_name: str, stream_folder: str) -> DeviceStatus:
             # หมายเหตุ: ปรับ "/app/streams/" ให้ตรงกับ Path จริงที่เก็บไฟล์วิดีโอใน Docker ของคุณ

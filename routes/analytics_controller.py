@@ -60,10 +60,12 @@ def get_occupancy_trends(
 
 @router.get("/current")
 def get_current_status(
-    lot_id: str = Query("CAMT_01", description="Parking Lot ID"),
-    db: Session = Depends(get_db)
+        lot_id: str = Query("CAMT_01", description="Parking Lot ID"),
+        db: Session = Depends(get_db)
 ):
-    # ดึงข้อมูล Snapshot ให้ตรงกับ lot_id ที่ Frontend ร้องขอมา
+    service = AnalyticsService(db)
+
+    # 1. ดึงข้อมูล Aggregate จาก Snapshot
     if lot_id == "CAMT_01":
         master_data = db.query(ParkingSnapshot).order_by(ParkingSnapshot.timestamp.desc()).first()
     else:
@@ -75,34 +77,39 @@ def get_current_status(
             detail=f"No real-time data available for {lot_id}. Waiting for AI Worker ingestion."
         )
 
-    # แยกโครงสร้างช่องจอดให้ถูกต้อง: CAMT_01 มี 34 ช่อง (Zone A,B,C), ส่วนลานอื่นใช้ Spot_xx
+    # 2. กำหนดรายชื่อช่องทั้งหมดให้ครบถ้วน (ป้องกันช่องตกหล่น)
     if lot_id == "CAMT_01":
-        zone_a = [f"A{i}" for i in range(1, 14)]     # A1 - A13
-        zone_c = [f"C{i}" for i in range(1, 16)]     # C1 - C15
-        zone_b = [f"B{i:02d}" for i in range(1, 7)]  # B01 - B06
+        zone_a = [f"A{i}" for i in range(1, 14)]
+        zone_c = [f"C{i}" for i in range(1, 16)]
+        zone_b = [f"B{i:02d}" for i in range(1, 7)]
         all_spot_ids = zone_a + zone_c + zone_b
     else:
         all_spot_ids = [f"Spot_{str(i).zfill(2)}" for i in range(1, master_data.total_spaces + 1)]
 
+    # 3. ดึงข้อมูลสถานะล่าสุดของแต่ละช่องจาก Event Log
+    latest_events = service._latest_event_per_spot(lot_id)
+    spots_dict = {event.spot_id: event.is_occupied for event in latest_events}
+
+    # 4. ประกอบร่างข้อมูลให้ครบทุกช่อง! ช่องไหนไม่มีประวัติให้ถือว่า "ว่าง" (False)
     spots_data = []
-    for i, sid in enumerate(all_spot_ids):
-        is_occupied = True if i < master_data.occupied_spaces else False
+    for sid in all_spot_ids:
+        # ใช้ .get() ถ้าไม่เจอ sid ใน spots_dict จะคืนค่า False แทน
+        is_occ = spots_dict.get(sid, False)
         spots_data.append({
             "spot_id": sid,
-            "is_occupied": is_occupied
+            "is_occupied": is_occ
         })
 
     return {
         "lot_id": lot_id,
         "available_spaces": master_data.available_spaces,
-        "total_spaces": master_data.total_spaces, # ดึงค่าจริงจาก DB ไม่ Hardcode 34
+        "total_spaces": master_data.total_spaces,
         "occupied_spaces": master_data.occupied_spaces,
         "occupancy_rate": master_data.occupacy_rate,
         "last_update": master_data.timestamp,
         "spots": spots_data,
         "active_camera": lot_id
     }
-
 
 @router.get("/health", response_model=SystemHealthResponse)
 def get_system_health(

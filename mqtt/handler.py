@@ -1,8 +1,10 @@
 import json
-from schemas.parking import ParkingPayload, LicensePlatePayload
-from db.models import ParkingSnapshot, EntryRecord, ParkingSnapshot2, ParkingEventLog
+from schemas.parking import LicensePlatePayload
+from schemas.analytics import CameraSnapshotPayload  # 🟢 นำเข้า Schema ของ Analytics
+from db.models import EntryRecord
 from db.session import get_db
 from datetime import datetime
+from services.analytics_service import AnalyticsService  # 🟢 นำเข้า Service ที่เราเขียนไว้
 
 
 def on_connect(client, userdata, flags, rc, properties):
@@ -31,53 +33,26 @@ def on_message(client, userdata, msg):
 
         data = json.loads(payload)
 
-        if topic == "test/parking" or topic == "test/parking2":
-            validated = ParkingPayload(**data)
+        if topic in ["test/parking", "test/parking2"]:
+            # 1. กำหนด lot_id ตาม Topic
+            lot_id = "CAMT_01" if topic == "test/parking" else "CAMT_02"
 
-            if topic == "test/parking":
-                snapshot = ParkingSnapshot(
-                    lot_id=validated.lot_id,
-                    timestamp=validated.timestamp if validated.timestamp else datetime.utcnow(),
-                    available_spaces=validated.available_spaces,
-                    total_spaces=validated.total_spaces,
-                    occupied_spaces=validated.occupied_spaces,
-                    occupacy_rate=validated.occupancy_rate,
-                    confidence=validated.confidence,
-                    processing_time_seconds=validated.processing_time_seconds
-                )
-            elif topic == "test/parking2":
-                snapshot = ParkingSnapshot2(
-                    lot_id=validated.lot_id,
-                    timestamp=validated.timestamp if validated.timestamp else datetime.utcnow(),
-                    available_spaces=validated.available_spaces,
-                    total_spaces=validated.total_spaces,
-                    occupied_spaces=validated.occupied_spaces,
-                    occupacy_rate=validated.occupancy_rate,
-                    confidence=validated.confidence,
-                    processing_time_seconds=validated.processing_time_seconds
-                )
+            # 2. ปั้น Payload ให้ตรงกับที่ AnalyticsService ต้องการ
+            sync_payload = CameraSnapshotPayload(
+                lot_id=lot_id,
+                total_spaces=data.get("total_spaces", 34),
+                available_spaces=data.get("available_spaces", 0),
+                occupied_spaces=data.get("occupied_spaces", 0),
+                occupacy_rate=data.get("occupancy_rate", 0.0),
+                confidence=data.get("confidence", 0.0),
+                processing_time_seconds=data.get("processing_time_seconds", 0.0)
+            )
 
-            db.add(snapshot)
+            # 3. 🟢 เรียกใช้ AnalyticsService ให้จัดการทุกอย่างแทน!
+            service = AnalyticsService(db)
+            result = service.process_orange_pi_snapshot(sync_payload)
 
-            if hasattr(validated, 'spot_details') and validated.spot_details:
-                for spot in validated.spot_details:
-
-                    last_log = db.query(ParkingEventLog).filter(
-                        ParkingEventLog.lot_id == validated.lot_id,
-                        ParkingEventLog.spot_id == spot.spot_id
-                    ).order_by(ParkingEventLog.timestamp.desc()).first()
-
-                    if not last_log or last_log.is_occupied != spot.is_occupied:
-                        event_log = ParkingEventLog(
-                            lot_id=validated.lot_id,
-                            spot_id=spot.spot_id,
-                            is_occupied=spot.is_occupied,
-                            timestamp=validated.timestamp if validated.timestamp else datetime.utcnow()
-                        )
-                        db.add(event_log)
-
-            db.commit()
-            print(f"Parking snapshot and event logs saved to DB for topic: {topic}")
+            print(f"Successfully synced via AnalyticsService: {result}")
 
         elif topic == "test/license":
             validated = LicensePlatePayload(**data)

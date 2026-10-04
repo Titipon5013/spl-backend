@@ -10,17 +10,16 @@ load_dotenv()
 MQTT_USER = os.getenv("MQTT_USER")
 MQTT_PASSWORD = os.getenv("MQTT_PASSWORD")
 MQTT_HOST = os.getenv("MQTT_BROKER_HOST", "localhost")
-client_id = os.getenv("MQTT_CLIENT")
 base_client_id = os.getenv("MQTT_CLIENT", "spl-camt-prod")
 
 class mqttClient:
     def __init__(self):
-
+        # 1. สร้างชื่อสุ่ม
         unique_client_id = f"{base_client_id}-{uuid.uuid4().hex[:8]}"
 
         self.mqtt_client = mqtt.Client(
             callback_api_version=CallbackAPIVersion.VERSION2,
-            client_id=client_id,
+            client_id=unique_client_id,  # 🟢 แก้ให้มาใช้ตัวแปรชื่อสุ่มตรงนี้ครับ!
             clean_session=True
         )
         self.mqtt_client.username_pw_set(MQTT_USER, MQTT_PASSWORD)
@@ -38,7 +37,6 @@ class mqttClient:
             self.mqtt_client.loop_start()
         except Exception as e:
             print(f"Unexpected Error occured: {e}")
-
 
     def stop_mqtt(self):
         print("Stopping mqtt")
