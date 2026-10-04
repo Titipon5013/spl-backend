@@ -59,7 +59,7 @@ def on_message(client, userdata, msg):
             entry_record = EntryRecord(
                 plate_number=validated.plate_number,
                 plate_image_url=validated.plate_image_url,
-                timestamp=validated.timestamp if validated.timestamp else datetime.utcnow(),
+                timestamp=validated.timestamp if validated.timestamp else datetime.now(),
                 lot_id=validated.lot_id,
             )
             db.add(entry_record)

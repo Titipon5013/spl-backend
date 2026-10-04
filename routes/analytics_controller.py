@@ -30,7 +30,7 @@ def get_kpis(
         db: Session = Depends(get_db),
 ):
     service = AnalyticsService(db)
-    end = end_date or datetime.utcnow()
+    end = end_date or datetime.now()
     start = start_date or (end - timedelta(days=7))
     return service.get_kpis(lot_id, start, end)
 
