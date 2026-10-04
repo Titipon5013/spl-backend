@@ -429,8 +429,8 @@ class AnalyticsService:
             if not dev:
                 return DeviceStatus(status="offline", last_seen=None)
 
-            # เช็คว่าขาดการติดต่อนานเกิน 5 นาที (300 วินาที) หรือไม่
-            if dev.last_seen and (current_time - dev.last_seen).total_seconds() > 300:
+            # 🟢 [จุดแก้ปัญหาที่ 1] ยืดเวลาเป็น 30 นาที (1800 วินาที) หรือเปลี่ยนเป็น 3600 ถ้าต้องการ 1 ชม.
+            if dev.last_seen and (current_time - dev.last_seen).total_seconds() > 1800:
                 return DeviceStatus(status="offline", last_seen=dev.last_seen)
 
             return DeviceStatus(status="online", last_seen=dev.last_seen)
@@ -445,7 +445,8 @@ class AnalyticsService:
                 # ถ้า Docker มีการ mount ไฟล์ไว้ ให้เช็คจากไฟล์ก่อน
                 if os.path.exists(file_path):
                     mtime = os.path.getmtime(file_path)
-                    if (current_time.timestamp() - mtime) < 180:
+                    # 🟢 ยืดเวลาของไฟล์สตรีมมิ่งด้วย เผื่อสตรีมนิ่ง
+                    if (current_time.timestamp() - mtime) < 1800:
                         return DeviceStatus(status="online", last_seen=datetime.fromtimestamp(mtime))
             except Exception:
                 pass
@@ -553,7 +554,12 @@ class AnalyticsService:
     def _device_uptime_score(self, device: DeviceStatus) -> float:
         if device.status not in ["online", "healthy"] or not device.last_seen:
             return 0.0
+
         age_seconds = (datetime.now() - device.last_seen).total_seconds()
-        if age_seconds > 300:
+
+        # ถ้าเกิน 30 นาทีถึงจะให้คะแนนเป็น 0
+        if age_seconds > 1800:
             return 0.0
-        return max(0.0, 100.0 - (age_seconds / 300) * 20)
+
+        # ค่อยๆ หักคะแนนแค่สูงสุด 20% ภายในช่วง 30 นาที (คะแนนจะแกว่งอยู่ที่ 80-100% จนกว่าจะถึง 30 นาที)
+        return max(0.0, 100.0 - (age_seconds / 1800) * 20)
