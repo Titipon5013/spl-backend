@@ -65,11 +65,11 @@ def handle_admin_command(db: Session, line_user_id: str, text: str) -> str | Non
                 line_user_id=line_user_id,
                 alert_types=DEFAULT_ALERT_TYPES,
                 muted=False,
-                linked_at=datetime.utcnow(),
+                linked_at=datetime.now(),
             )
             db.add(sub)
         else:
-            sub.linked_at = datetime.utcnow()
+            sub.linked_at = datetime.now()
         db.commit()
         return (
             "✅ Linked. You can ask about occupancy, health, and anomalies.\n"

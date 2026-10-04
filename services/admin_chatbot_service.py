@@ -284,7 +284,8 @@ class AdminChatbotService:
             "Content-Type": "application/json",
         }
 
-        current_datetime = datetime.now(timezone.utc).isoformat()
+        # 🟢 แก้ไขเรื่อง Timezone ให้เป็นเวลา Local (ประเทศไทย)
+        current_datetime = datetime.now().isoformat()
         dynamic_prompt = (
             self.system_prompt
             + f"\n[Reference: Current date and time is {current_datetime}]"
@@ -341,9 +342,9 @@ class AdminChatbotService:
                         }
                     )
 
+                # 🟢 อัปเดตประวัติแชท และสับสวิตช์ห้าม AI เรียก Tool ซ้ำในรอบที่ 2
                 payload["messages"] = messages_history
-                payload.pop("tools", None)
-                payload.pop("tool_choice", None)
+                payload["tool_choice"] = "none"
 
                 response_step2 = requests.post(
                     self.endpoint,

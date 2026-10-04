@@ -186,7 +186,7 @@ class AnalyticsService:
             "occupancy_rate": round(latest.occupacy_rate, 2),
             "confidence": latest.confidence,
             "timestamp": latest.timestamp.isoformat(),
-            "data_age_seconds": int((datetime.utcnow() - latest.timestamp).total_seconds()),
+            "data_age_seconds": int((datetime.now() - latest.timestamp).total_seconds()),
         }
 
     def _latest_event_per_spot(self, lot_id: str) -> list[ParkingEventLog]:
@@ -228,7 +228,7 @@ class AnalyticsService:
             "state": "occupied" if latest.is_occupied else "free",
             "since": latest.timestamp.isoformat(),
             "duration_minutes": round(
-                (datetime.utcnow() - latest.timestamp).total_seconds() / 60, 1
+                (datetime.now() - latest.timestamp).total_seconds() / 60, 1
             ),
         }
 
@@ -277,7 +277,7 @@ class AnalyticsService:
         return sum(dwell_minutes) / len(dwell_minutes) if dwell_minutes else 0.0
 
     def process_orange_pi_snapshot(self, payload: CameraSnapshotPayload) -> str:
-        current_time = datetime.utcnow()
+        current_time = datetime.now()
 
         model = ParkingSnapshot if payload.lot_id == "CAMT_01" else ParkingSnapshot2
         new_snapshot = model(
@@ -358,10 +358,10 @@ class AnalyticsService:
         device = self.db.query(DeviceHealth).filter(DeviceHealth.device_id == device_id).first()
         if device:
             device.status = status
-            device.last_seen = datetime.utcnow()
+            device.last_seen = datetime.now()
         else:
             new_device = DeviceHealth(device_id=device_id, device_type=device_type, status=status,
-                                      last_seen=datetime.utcnow())
+                                      last_seen=datetime.now())
             self.db.add(new_device)
 
     def get_system_health_status(self, lot_id: str) -> SystemHealthResponse:
@@ -370,7 +370,7 @@ class AnalyticsService:
             dev = self.db.query(DeviceHealth).filter(DeviceHealth.device_id == dev_id).first()
             if not dev:
                 return DeviceStatus(status="offline", last_seen=None)
-            if dev.last_seen and (datetime.utcnow() - dev.last_seen).total_seconds() > 300:
+            if dev.last_seen and (datetime.now() - dev.last_seen).total_seconds() > 300:
                 return DeviceStatus(status="offline", last_seen=dev.last_seen)
             return DeviceStatus(status=dev.status, last_seen=dev.last_seen)
 
@@ -430,7 +430,7 @@ class AnalyticsService:
     def _device_uptime_score(self, device: DeviceStatus) -> float:
         if device.status not in ["online", "healthy"] or not device.last_seen:
             return 0.0
-        age_seconds = (datetime.utcnow() - device.last_seen).total_seconds()
+        age_seconds = (datetime.now() - device.last_seen).total_seconds()
         if age_seconds > 300:
             return 0.0
         return max(0.0, 100.0 - (age_seconds / 300) * 20)

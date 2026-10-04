@@ -30,7 +30,7 @@ class CameraEventPayload(BaseModel):
 @router.post("/camera/events", status_code=201)
 def receive_camera_events(payload: CameraEventPayload, db: Session = Depends(get_db)):
     try:
-        current_time = datetime.utcnow()
+        current_time = datetime.now()
         lot_id = payload.lot_id
 
         occupancy_rate = (payload.occupied_spaces / payload.total_spaces) if payload.total_spaces > 0 else 0.0
