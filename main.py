@@ -17,6 +17,7 @@ from routes.admin_webhook_controller import router as admin_webhook_router
 from routes.oauth_controller import router as oauth_router
 from routes.admin_access_controller import router as admin_access_router
 from routes.report_controller import router as report_router
+from routes.gate_controller import router as gate_router
 
 from routes.camera_event_controller import router as camera_event_router
 from services.report_scheduler import start_report_scheduler, stop_report_scheduler
@@ -83,6 +84,7 @@ app.include_router(admin_webhook_router, prefix="/api/webhook", tags=["Admin LIN
 app.include_router(oauth_router)
 app.include_router(admin_access_router)
 app.include_router(report_router)
+app.include_router(gate_router)
 app.include_router(camera_event_router, prefix="/api")
 # Preserve the ingestion paths already used by the detector documentation and
 # simulator while keeping /api/{heartbeat,camera/events} available to old clients.

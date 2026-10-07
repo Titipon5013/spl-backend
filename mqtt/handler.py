@@ -5,6 +5,8 @@ from db.models import EntryRecord
 from db.session import get_db
 from datetime import datetime
 from services.analytics_service import AnalyticsService  # 🟢 นำเข้า Service ที่เราเขียนไว้
+from schemas.gate import GateEventPayload
+from services.gate_service import GateService
 
 
 def on_connect(client, userdata, flags, rc, properties):
@@ -14,6 +16,7 @@ def on_connect(client, userdata, flags, rc, properties):
         client.subscribe("test/parking", qos=1, options={"no_local": True})
         client.subscribe("test/parking2", qos=1, options={"no_local": True})
         client.subscribe("test/license", qos=1, options={"no_local": True})
+        client.subscribe("test/gate", qos=1, options={"no_local": True})
     else:
         print(f"MQTT connection failed with code {rc}")
 
@@ -65,6 +68,11 @@ def on_message(client, userdata, msg):
             db.add(entry_record)
             db.commit()
             print("Entry record saved to DB")
+
+        elif topic == "test/gate":
+            validated = GateEventPayload(**data)
+            result = GateService(db).record_event(validated)
+            print(f"Gate event {result}: event={validated.event}, event_id={validated.event_id}")
 
         else:
             print(f"Unhandled topic: {topic}")

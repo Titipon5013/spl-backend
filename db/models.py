@@ -113,6 +113,22 @@ class ParkingEventLog(Base):
     is_occupied = Column(Boolean, default=False)
     timestamp = Column(DateTime, default=datetime.utcnow, index=True)
 
+
+class GateEvent(Base):
+    __tablename__ = "gate_events"
+    __table_args__ = (
+        UniqueConstraint("event_id", name="uq_gate_events_event_id"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    event = Column(String(10), nullable=False)
+    event_id = Column(String(100), nullable=False, unique=True, index=True)
+    gate_id = Column(String(50), nullable=False, index=True)
+    vehicle_class = Column(String(30), nullable=True)
+    confidence = Column(Float, nullable=True)
+    timestamp = Column(DateTime(timezone=True), nullable=False, index=True)
+
+
 class DeviceHealth(Base):
     __tablename__ = "device_health"
     id = Column(Integer, primary_key=True, index=True)

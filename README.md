@@ -5,6 +5,7 @@ This is the backend for the Smart Parking Lot application, built with FastAPI. I
 ## Features
 
 - **Real-time Parking Monitoring**: Integrates with an MQTT broker to receive live data from parking sensors, allowing for immediate updates on parking space occupancy.
+- **Gate Event Counting**: Subscribes to `test/gate`, stores each `open`/`close` event in `gate_events`, ignores duplicate QoS 1 deliveries by `event_id`, and exposes daily/hourly counts.
 - **User and Admin Management**: Complete CRUD (Create, Read, Update, Delete) operations for both regular users and administrators.
 - **Secure Authentication**: Implements JWT (JSON Web Tokens) for securing API endpoints, ensuring that only authorized users can access protected routes.
 - **User Registration Workflow**: A comprehensive registration process where users can sign up, upload necessary identification documents to an AWS S3 bucket, and await approval from an administrator.
@@ -39,6 +40,9 @@ The following are the primary API endpoints provided by the backend:
 - `/api/plates`: For managing user license plates.
 - `/mcp/`: The MCP server endpoint for AI agents. Requires a bearer token from `MCP_API_TOKENS`.
 - `/api/reports/trigger`: Dispatches the weekly report emails on demand (approved admins only) and returns a sent/failed summary.
+- `/api/gate/counts/daily`: Returns today's (or the requested day's) gate open/close counts from the database.
+- `/api/gate/counts/hourly`: Returns the gate open/close counts for each hour of the requested day.
+- `/api/gate/counts/weekly`: Returns Monday-Sunday totals, daily breakdown, and peak hours for open, close, and all gate events.
 - `/webhook/line/admin`: Admin LINE webhook (Feature 4). Requires `ADMIN_LINE_*` and a linked subscription for queries.
 - `/webhook/line/user`: Commuter LINE webhook (Feature 6).
 
@@ -83,6 +87,12 @@ The following are the primary API endpoints provided by the backend:
     ```
 
 The backend server will now be running and accessible at `http://localhost:8000`.
+
+The MQTT client subscribes to `test/parking`, `test/parking2`, `test/license`, and
+`test/gate`. Gate payloads must include `event` (`open` or `close`), a unique
+`event_id`, `gate_id`, and an ISO-8601 `timestamp`. `vehicle_class` and
+`confidence` are stored when provided. Daily/hourly boundaries use
+`Asia/Bangkok`.
 
 ### Simulate Camera Ingestion Locally
 
