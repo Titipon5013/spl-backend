@@ -7,6 +7,10 @@ from schemas.entry_record import WeeklyUsage
 
 class IEntryRecordRepository(ABC):
     @abstractmethod
+    def create_entry_record(self, plate_number: str, plate_image_url: str) -> EntryRecord:
+        pass
+
+    @abstractmethod
     def get_all_entry_records(self, start_date: Optional[date] = None, end_date: Optional[date] = None) -> List[EntryRecord]:
         pass
 

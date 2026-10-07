@@ -21,6 +21,19 @@ class EntryRecordService:
         db_entry_records = self.entry_record_repository.get_all_entry_records(start_date=start_date, end_date=end_date)
         return [EntryRecord.from_orm(rec) for rec in db_entry_records]
 
+    def create_entry_record(self, plate_number: str, file: UploadFile) -> EntryRecord:
+        file_url = self.s3_cloudfront.upload_file(
+            file.file,
+            file.filename,
+            prefix="entry-records/",
+            content_type=getattr(file, "content_type", None),
+        )
+        db_entry_record = self.entry_record_repository.create_entry_record(
+            plate_number=plate_number,
+            plate_image_url=file_url,
+        )
+        return EntryRecord.from_orm(db_entry_record)
+
     def update_entry_record(self, entry_id: int, plate_number: str, file: Optional[UploadFile] = None) -> EntryRecord:
         db_entry_record = self.entry_record_repository.get_entry_record_by_id(entry_id)
         if not db_entry_record:
