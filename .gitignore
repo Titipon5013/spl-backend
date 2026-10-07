@@ -4,8 +4,6 @@
 test.db
 __pycache__
 .idea
-migrations
-
 .deepsec
 
 progress1/
