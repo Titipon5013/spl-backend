@@ -1,14 +1,61 @@
+from datetime import date, datetime, time, timedelta
+from typing import Optional
+from zoneinfo import ZoneInfo
+
 from fastapi import APIRouter, Depends, Query, HTTPException
+from sqlalchemy import and_
 from sqlalchemy.orm import Session
+
 from db.session import get_db
 from services.analytics_service import AnalyticsService
 from schemas.analytics import HeatmapResponse, TrendResponse, SystemHealthResponse, CameraSnapshotPayload
-from datetime import datetime, timedelta
-from typing import Optional
-from db.models import ParkingSnapshot, ParkingSnapshot2, ParkingEventLog
-from sqlalchemy import desc
+from db.models import GateEvent, ParkingSnapshot, ParkingSnapshot2
 
 router = APIRouter()
+
+
+@router.get("/gate/counts")
+def get_gate_counts(
+        day: Optional[date] = Query(None, description="Local date in Asia/Bangkok; defaults to today"),
+        gate_id: Optional[str] = Query(None, description="Filter to one gate"),
+        db: Session = Depends(get_db),
+):
+    """Return durable open/close counts and hourly buckets from gate_events."""
+    local_tz = ZoneInfo("Asia/Bangkok")
+    report_day = day or datetime.now(local_tz).date()
+    start = datetime.combine(report_day, time.min, tzinfo=local_tz)
+    end = datetime.combine(report_day + timedelta(days=1), time.min, tzinfo=local_tz)
+
+    query = db.query(GateEvent).filter(
+        and_(GateEvent.timestamp >= start, GateEvent.timestamp < end)
+    )
+    if gate_id:
+        query = query.filter(GateEvent.gate_id == gate_id)
+    events = query.order_by(GateEvent.timestamp.asc()).all()
+
+    hourly = [{"hour": hour, "open_count": 0, "close_count": 0} for hour in range(24)]
+    totals = {"open": 0, "close": 0}
+    for event in events:
+        timestamp = event.timestamp
+        if timestamp.tzinfo is None:
+            # SQLite drops timezone metadata; stored wall time remains Bangkok.
+            timestamp = timestamp.replace(tzinfo=local_tz)
+        else:
+            timestamp = timestamp.astimezone(local_tz)
+        totals[event.event] += 1
+        hourly[timestamp.hour][f"{event.event}_count"] += 1
+
+    difference = abs(totals["open"] - totals["close"])
+    return {
+        "date": report_day.isoformat(),
+        "timezone": "Asia/Bangkok",
+        "gate_id": gate_id,
+        "open_count": totals["open"],
+        "close_count": totals["close"],
+        "count_difference": difference,
+        "possible_missing_events": difference > 1,
+        "hourly": hourly,
+    }
 
 
 @router.get("/heatmap", response_model=HeatmapResponse)

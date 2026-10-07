@@ -100,6 +100,22 @@ The simulator sends:
 
 Use `--dry-run` to print payloads without sending them.
 
+### Gate event counts
+
+The MQTT subscriber listens to `test/gate` at QoS 1. Before deploying this
+change to an existing database, apply `scripts/add_gate_events.sql`. Gate
+events are stored by `event_id` so MQTT redelivery cannot inflate the counts.
+
+The dashboard can request daily totals and 24 hourly buckets with:
+
+```text
+GET /api/analytics/gate/counts?day=2026-10-07&gate_id=CAMT_EXIT_01
+```
+
+`day` defaults to today in `Asia/Bangkok`; totals are calculated from persisted
+`open` and `close` events. `possible_missing_events` is true when the daily
+open and close totals differ by more than one.
+
 ## Running the Backend with Docker
 
 Use this section when running the backend container locally against PostgreSQL on your machine.

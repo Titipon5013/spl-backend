@@ -1,10 +1,13 @@
 import json
+from zoneinfo import ZoneInfo
 from schemas.parking import LicensePlatePayload
 from schemas.analytics import CameraSnapshotPayload  # 🟢 นำเข้า Schema ของ Analytics
-from db.models import EntryRecord
+from schemas.gate import GateEventPayload
+from db.models import EntryRecord, GateEvent
 from db.session import get_db
 from datetime import datetime
 from services.analytics_service import AnalyticsService  # 🟢 นำเข้า Service ที่เราเขียนไว้
+from sqlalchemy.exc import IntegrityError
 
 
 def on_connect(client, userdata, flags, rc, properties):
@@ -14,6 +17,7 @@ def on_connect(client, userdata, flags, rc, properties):
         client.subscribe("test/parking", qos=1, options={"no_local": True})
         client.subscribe("test/parking2", qos=1, options={"no_local": True})
         client.subscribe("test/license", qos=1, options={"no_local": True})
+        client.subscribe("test/gate", qos=1, options={"no_local": True})
     else:
         print(f"MQTT connection failed with code {rc}")
 
@@ -65,6 +69,39 @@ def on_message(client, userdata, msg):
             db.add(entry_record)
             db.commit()
             print("Entry record saved to DB")
+
+        elif topic == "test/gate":
+            gate_event = GateEventPayload(**data)
+            if gate_event.timestamp.tzinfo is None:
+                gate_timestamp = gate_event.timestamp.replace(tzinfo=ZoneInfo("Asia/Bangkok"))
+            else:
+                gate_timestamp = gate_event.timestamp
+
+            # QoS 1 permits redelivery. The database constraint is the final
+            # guard against concurrent duplicate deliveries.
+            if db.query(GateEvent.id).filter_by(event_id=gate_event.event_id).first():
+                print(f"Duplicate gate event ignored: event_id={gate_event.event_id}")
+                return
+
+            db.add(GateEvent(
+                event=gate_event.event,
+                event_id=gate_event.event_id,
+                gate_id=gate_event.gate_id,
+                timestamp=gate_timestamp,
+                vehicle_class=gate_event.vehicle_class,
+                confidence=gate_event.confidence,
+                camera=gate_event.camera,
+                open_duration_seconds=gate_event.open_duration_seconds,
+                open_count_today=gate_event.open_count_today,
+                close_count_today=gate_event.close_count_today,
+            ))
+            try:
+                db.commit()
+            except IntegrityError:
+                db.rollback()
+                print(f"Concurrent duplicate gate event ignored: event_id={gate_event.event_id}")
+                return
+            print(f"Gate event saved: gate_id={gate_event.gate_id}, event={gate_event.event}")
 
         else:
             print(f"Unhandled topic: {topic}")
