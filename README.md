@@ -1,5 +1,12 @@
 # spl-backend
 
+> **Branch `pree-dev` — paper submission snapshot.**
+> This branch freezes the backend (FastAPI, MQTT ingestion, PostgreSQL) as described in the MDPI *Sensors* paper
+> "Multi-Camera Smart Parking on Orange Pi and Jetson" (Thiengburanathum et al.).
+> It was branched from `dev` on 2026-10-08, matching the deployed images
+> `time5013/spl-backend:v22`. Changes made for the paper are merged back to `dev` by pull request.
+> Ongoing development continues on `dev`.
+
 This is the backend for the Smart Parking Lot application, built with FastAPI. It provides a robust API for managing parking spaces, users, authentication, and real-time updates through MQTT.
 
 ## Features
